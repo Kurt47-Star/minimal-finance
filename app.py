@@ -1,17 +1,17 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import os
 import plotly.express as px
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;700&display=swap');
-    h1, h2, h3, h4, h5, h6, p, label, input, select, .stButton>button {
-        font-family: 'Prompt', sans-serif !important;
-    }
+    h1, h2, h3, h4, h5, h6, p, label, input, select, .stButton>button { font-family: 'Prompt', sans-serif !important; }
     h1 { font-weight: 700; color: #2C3E50; text-align: center; margin-bottom: 1.5rem; }
     .stButton>button { border-radius: 8px; font-weight: 500; }
     .quick-add-text { font-size: 16px; font-weight: bold; color: #2C3E50; margin-bottom: 5px; }
@@ -21,42 +21,59 @@ st.markdown("""
 
 st.title("☁️ Minimal Finance Pro")
 
-DATA_FILE = "my_finance_data.csv"
-QUICK_ADD_FILE = "quick_adds.csv"
+# --- ระบบเชื่อมต่อคลาวด์ (Google Sheets) ---
+@st.cache_resource
+def init_connection():
+    creds_dict = json.loads(st.secrets["google_credentials"])
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(creds)
 
+client = init_connection()
+
+# เชื่อมต่อหน้าตารางบัญชีหลัก
+try:
+    sheet = client.open("Minimal Finance Pro").sheet1
+except Exception as e:
+    st.error("❌ หาไฟล์ Google Sheets ที่ชื่อ 'Minimal Finance Pro' ไม่เจอครับ กรุณาตรวจสอบชื่อไฟล์ให้ตรงกัน")
+    st.stop()
+
+# เชื่อมต่อหน้าตารางปุ่มลัด (ถ้าไม่มีจะสร้างให้อัตโนมัติ)
+try:
+    qa_sheet = client.open("Minimal Finance Pro").worksheet("QuickAdds")
+except gspread.exceptions.WorksheetNotFound:
+    qa_sheet = client.open("Minimal Finance Pro").add_worksheet(title="QuickAdds", rows="50", cols="5")
+    qa_sheet.append_row(["ชื่อปุ่ม", "ประเภท", "หมวดหมู่", "จำนวนเงิน"])
+    qa_sheet.append_row(["🍛 ข้าว/อาหาร 50฿", "รายจ่าย", "อาหาร/เครื่องดื่ม", 50.0])
+    qa_sheet.append_row(["🚌 เดินทางไปหา Alice", "รายจ่าย", "ค่าเดินทาง", 150.0])
+    qa_sheet.append_row(["📚 เก็บเงินสอบ GRE Physics", "เงินออม", "ออมเพื่อเรียนต่อ/อนาคต", 500.0])
+    qa_sheet.append_row(["💻 ซื้ออุปกรณ์เขียนนิยาย", "รายจ่าย", "อุปกรณ์ไอที/เขียนงาน", 200.0])
+
+# --- ฟังก์ชันจัดการข้อมูล ---
 def load_data():
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
+    records = sheet.get_all_records()
+    if records:
+        df = pd.DataFrame(records)
         df['วันที่'] = pd.to_datetime(df['วันที่']).dt.date
+        df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0)
         return df
     return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"])
 
 def load_quick_adds():
-    if os.path.exists(QUICK_ADD_FILE):
-        return pd.read_csv(QUICK_ADD_FILE)
-    return pd.DataFrame([
-        {"ชื่อปุ่ม": "🍛 อาหาร 50฿", "ประเภท": "รายจ่าย", "หมวดหมู่": "อาหาร/เครื่องดื่ม", "จำนวนเงิน": 50.0},
-        {"ชื่อปุ่ม": "🚌 เดินทางไปหา Alice", "ประเภท": "รายจ่าย", "หมวดหมู่": "ค่าเดินทาง", "จำนวนเงิน": 150.0},
-        {"ชื่อปุ่ม": "📚 เก็บเงินสอบ GRE", "ประเภท": "เงินออม", "หมวดหมู่": "ออมเพื่อเรียนต่อ/อนาคต", "จำนวนเงิน": 500.0},
-        {"ชื่อปุ่ม": "💻 ซื้ออุปกรณ์", "ประเภท": "รายจ่าย", "หมวดหมู่": "อุปกรณ์ไอที/เขียนงาน", "จำนวนเงิน": 200.0}
-    ])
-
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
-
-def save_quick_adds(df):
-    df.to_csv(QUICK_ADD_FILE, index=False)
-
-if 'finance_data' not in st.session_state:
-    st.session_state.finance_data = load_data()
-if 'quick_adds' not in st.session_state:
-    st.session_state.quick_adds = load_quick_adds()
+    records = qa_sheet.get_all_records()
+    if records:
+        df = pd.DataFrame(records)
+        df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0)
+        return df
+    return pd.DataFrame(columns=["ชื่อปุ่ม", "ประเภท", "หมวดหมู่", "จำนวนเงิน"])
 
 def add_entry(date, entry_type, category, amount, note):
-    new_data = pd.DataFrame([{"วันที่": date, "ประเภท": entry_type, "หมวดหมู่": category, "จำนวนเงิน": amount, "รายละเอียด": note}])
-    st.session_state.finance_data = pd.concat([st.session_state.finance_data, new_data], ignore_index=True)
-    save_data(st.session_state.finance_data)
-    st.toast(f"บันทึก {amount} บาท สำเร็จ! ✨")
+    sheet.append_row([str(date), entry_type, category, amount, note])
+    st.toast(f"บันทึก {amount} บาท ลงคลาวด์สำเร็จ! ✨")
+    st.cache_data.clear()
+
+df = load_data()
+qa_df = load_quick_adds()
 
 tab1, tab2, tab3, tab4 = st.tabs(["✨ บันทึกเงิน", "📊 วิเคราะห์ Infographic", "🎯 เป้าหมาย", "⚙️ ตั้งค่า/จัดการ"])
 
@@ -65,25 +82,14 @@ with tab1:
     col_main, col_space = st.columns([2, 1])
     with col_main:
         st.markdown("<p class='quick-add-text'>⚡ บันทึกด่วน</p>", unsafe_allow_html=True)
-        qa_df = st.session_state.quick_adds
         if not qa_df.empty:
             cols = st.columns(4)
             for i, row in qa_df.iterrows():
                 col = cols[i % 4]
-                
-                # --- จุดแก้ไขความปลอดภัยข้อมูล (ป้องกัน Error ตัวหนังสือซ้อนหรือช่องว่าง) ---
-                button_label = str(row['ชื่อปุ่ม']) if pd.notna(row['ชื่อปุ่ม']) else f"ปุ่มลัด {i+1}"
-                btn_type = str(row['ประเภท']) if pd.notna(row['ประเภท']) else "รายจ่าย"
-                btn_cat = str(row['หมวดหมู่']) if pd.notna(row['หมวดหมู่']) else "อื่นๆ"
-                btn_amt = float(row['จำนวนเงิน']) if pd.notna(row['จำนวนเงิน']) else 0.0
-                
-                if col.button(button_label, use_container_width=True):
-                    if btn_amt > 0:
-                        add_entry(datetime.date.today(), btn_type, btn_cat, btn_amt, "บันทึกด่วน")
-                        st.rerun()
-        else:
-            st.caption("ยังไม่มีปุ่มบันทึกด่วน สามารถเพิ่มได้ที่แท็บ '⚙️ ตั้งค่าและจัดการ'")
-
+                if col.button(str(row['ชื่อปุ่ม']), use_container_width=True):
+                    add_entry(datetime.date.today(), str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน")
+                    st.rerun()
+                    
         st.markdown("---")
         st.markdown("<p class='quick-add-text'>📝 บันทึกลงรายละเอียด</p>", unsafe_allow_html=True)
         type_entry = st.radio("ประเภท", ["📥 รายรับ", "💸 รายจ่าย", "🐷 เงินออม", "📈 เงินลงทุน"], horizontal=True, label_visibility="collapsed")
@@ -108,26 +114,26 @@ with tab1:
 
 # --- Tab 2: หน้าวิเคราะห์ Infographic ---
 with tab2:
-    df = st.session_state.finance_data.copy()
     if not df.empty:
-        df['วันที่'] = pd.to_datetime(df['วันที่'])
-        df['ปี'] = df['วันที่'].dt.year
-        df['เดือน'] = df['วันที่'].dt.month
-        df['ชื่อเดือน'] = df['วันที่'].dt.strftime('%b')
+        df_chart = df.copy()
+        df_chart['วันที่'] = pd.to_datetime(df_chart['วันที่'])
+        df_chart['ปี'] = df_chart['วันที่'].dt.year
+        df_chart['เดือน'] = df_chart['วันที่'].dt.month
+        df_chart['ชื่อเดือน'] = df_chart['วันที่'].dt.strftime('%b')
         
         st.markdown("### 🔍 ตัวกรองข้อมูล")
         f_col1, f_col2, f_col3 = st.columns(3)
-        year_list = ["ภาพรวมทุกปี"] + sorted(list(df['ปี'].unique()), reverse=True)
+        year_list = ["ภาพรวมทุกปี"] + sorted(list(df_chart['ปี'].unique()), reverse=True)
         selected_year = f_col1.selectbox("เลือกปี", year_list)
         
         if selected_year != "ภาพรวมทุกปี":
-            df_filtered = df[df['ปี'] == selected_year]
+            df_filtered = df_chart[df_chart['ปี'] == selected_year]
             month_list = ["ภาพรวมทั้งปี"] + sorted(list(df_filtered['เดือน'].unique()))
             selected_month = f_col2.selectbox("เลือกเดือน", month_list)
             if selected_month != "ภาพรวมทั้งปี":
                 df_filtered = df_filtered[df_filtered['เดือน'] == selected_month]
         else:
-            df_filtered = df
+            df_filtered = df_chart
             selected_month = "ภาพรวมทั้งปี"
             
         st.markdown("---")
@@ -145,17 +151,14 @@ with tab2:
         m4.markdown(f"<div class='metric-card'><p style='margin:0;color:#7f8c8d;'>🐷 เงินออม</p><h3 style='margin:0;color:#f1c40f;'>฿{sav:,.0f}</h3></div>", unsafe_allow_html=True)
         m5.markdown(f"<div class='metric-card'><p style='margin:0;color:#7f8c8d;'>📈 ลงทุน</p><h3 style='margin:0;color:#9b59b6;'>฿{inv:,.0f}</h3></div>", unsafe_allow_html=True)
         
-        st.write("")
         expense_df = df_filtered[df_filtered['ประเภท'] == 'รายจ่าย']
-        
         col_chart1, col_chart2 = st.columns(2)
         
         with col_chart1:
             st.markdown("#### 🍕 สัดส่วนการใช้เงิน (Donut Chart)")
             if not expense_df.empty:
                 pie_data = expense_df.groupby('หมวดหมู่')['จำนวนเงิน'].sum().reset_index()
-                fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่', hole=0.4,
-                                 color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
                 fig_pie.update_traces(textposition='inside', textinfo='percent+label')
                 fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0))
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -167,40 +170,25 @@ with tab2:
             if not expense_df.empty:
                 if selected_month != "ภาพรวมทั้งปี" and selected_year != "ภาพรวมทุกปี":
                     trend_data = expense_df.groupby(expense_df['วันที่'].dt.day)['จำนวนเงิน'].sum().reset_index()
-                    trend_data.rename(columns={'วันที่': 'วันที่ (ของเดือน)'}, inplace=True)
-                    fig_line = px.line(trend_data, x='วันที่ (ของเดือน)', y='จำนวนเงิน', markers=True,
-                                       line_shape='spline', color_discrete_sequence=['#e74c3c'])
+                    fig_line = px.line(trend_data, x='วันที่', y='จำนวนเงิน', markers=True, line_shape='spline', color_discrete_sequence=['#e74c3c'])
                 else:
                     trend_data = expense_df.groupby('ชื่อเดือน')['จำนวนเงิน'].sum().reset_index()
                     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
                     trend_data['ชื่อเดือน'] = pd.Categorical(trend_data['ชื่อเดือน'], categories=months, ordered=True)
                     trend_data = trend_data.sort_values('ชื่อเดือน')
-                    
-                    fig_line = px.bar(trend_data, x='ชื่อเดือน', y='จำนวนเงิน', text='จำนวนเงิน',
-                                      color_discrete_sequence=['#e74c3c'])
+                    fig_line = px.bar(trend_data, x='ชื่อเดือน', y='จำนวนเงิน', text='จำนวนเงิน', color_discrete_sequence=['#e74c3c'])
                     fig_line.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
                 
-                fig_line.update_layout(margin=dict(t=0, b=0, l=0, r=0), xaxis_title="", yaxis_title="จำนวนเงิน (บาท)")
+                fig_line.update_layout(margin=dict(t=0, b=0, l=0, r=0), xaxis_title="", yaxis_title="")
                 st.plotly_chart(fig_line, use_container_width=True)
             else:
                 st.info("ไม่มีข้อมูลเพียงพอสร้างกราฟ")
-                
-        st.markdown("---")
-        
-        st.markdown("#### 🏆 Top 3 หมวดหมู่ที่จ่ายหนักที่สุด")
-        if not expense_df.empty:
-            top_expenses = expense_df.groupby('หมวดหมู่')['จำนวนเงิน'].sum().sort_values(ascending=False).head(3)
-            medals = ["🥇", "🥈", "🥉"]
-            cols = st.columns(3)
-            for i, (cat, amt) in enumerate(top_expenses.items()):
-                cols[i].markdown(f"<div style='text-align:center; padding:10px; background-color:#fff3cd; border-radius:10px;'><h4>{medals[i]} {cat}</h4><h3 style='color:#d35400;'>฿{amt:,.0f}</h3></div>", unsafe_allow_html=True)
     else:
         st.info("ยังไม่มีข้อมูล กรุณาบันทึกข้อมูลในแท็บ 'บันทึกเงิน'")
 
 # --- Tab 3: หน้าติดตามเป้าหมาย ---
 with tab3:
     st.subheader("🎯 เป้าหมายการเงิน")
-    df = st.session_state.finance_data.copy()
     total_study_savings = df[(df['ประเภท'] == 'เงินออม') & (df['หมวดหมู่'] == 'ออมเพื่อเรียนต่อ/อนาคต')]['จำนวนเงิน'].sum() if not df.empty else 0
     GOAL_STUDY = 100000 
     progress_percent = min(total_study_savings / GOAL_STUDY, 1.0)
@@ -211,18 +199,22 @@ with tab3:
 # --- Tab 4: ตั้งค่าและจัดการ ---
 with tab4:
     st.subheader("⚡ จัดการปุ่มบันทึกด่วน")
-    edited_qa = st.data_editor(st.session_state.quick_adds, use_container_width=True, num_rows="dynamic", key="editor_qa")
-    if st.button("💾 บันทึกปุ่มด่วน", use_container_width=True):
-        st.session_state.quick_adds = edited_qa
-        save_quick_adds(edited_qa)
+    edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa")
+    if st.button("💾 บันทึกปุ่มด่วนลงคลาวด์", use_container_width=True):
+        qa_sheet.clear()
+        data = [edited_qa.columns.values.tolist()] + edited_qa.values.tolist()
+        qa_sheet.update(range_name="A1", values=data)
         st.success("อัปเดตปุ่มสำเร็จ!")
         st.rerun()
+        
     st.markdown("---")
     st.subheader("✏️ แก้ไข/ลบ ประวัติทั้งหมด")
-    if not st.session_state.finance_data.empty:
-        edited_df = st.data_editor(st.session_state.finance_data, use_container_width=True, num_rows="dynamic", key="editor_finance")
-        if st.button("💾 บันทึกประวัติ", use_container_width=True):
-            st.session_state.finance_data = edited_df
-            save_data(edited_df)
+    if not df.empty:
+        edited_df = st.data_editor(df, use_container_width=True, num_rows="dynamic", key="editor_finance")
+        if st.button("💾 บันทึกประวัติลงคลาวด์", use_container_width=True):
+            sheet.clear()
+            edited_df['วันที่'] = edited_df['วันที่'].astype(str)
+            data = [edited_df.columns.values.tolist()] + edited_df.values.tolist()
+            sheet.update(range_name="A1", values=data)
             st.success("อัปเดตสำเร็จ!")
             st.rerun()
