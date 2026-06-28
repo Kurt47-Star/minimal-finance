@@ -231,11 +231,15 @@ else:
                 df_filtered = df_chart
                 selected_month = "ภาพรวมทั้งปี"
             
-            # ปุ่มสลับรูปแบบกราฟและธีมสี
+            # ปุ่มสลับรูปแบบกราฟและธีมสี (แก้ไขบั๊กชุดสีตรงนี้ครับ)
             chart_type = ctrl_col3.selectbox("รูปแบบแผนภูมิรายจ่าย", ["🍕 แผนภูมิโดนัท (Donut)", "🌀 วงกลมสลับชั้น (Sunburst)", "📦 แผนภูมิกล่องสัดส่วน (Treemap)"])
             color_theme = ctrl_col4.selectbox("โทนสีเครื่องแต่งกราฟ", ["Pastel (พาสเทลละมุน)", "Vivid (สีสันสดใส)", "Cool (โทนเย็นสบายตา)"])
             
-            theme_map = {"Pastel (พาสเทลละมุน)": px.colors.qualitative.Pastel, "Vivid (สีสันสดใส)": px.colors.qualitative.Vivid, "Cool (โทนเย็นสบายตา)": px.colors.qualitative.CoolEarthy}
+            theme_map = {
+                "Pastel (พาสเทลละมุน)": px.colors.qualitative.Pastel, 
+                "Vivid (สีสันสดใส)": px.colors.qualitative.Vivid, 
+                "Cool (โทนเย็นสบายตา)": px.colors.qualitative.Set3  # เปลี่ยนเป็น Set3 ที่ระบบรู้จัก
+            }
             chosen_color = theme_map[color_theme]
 
             st.markdown("---")
@@ -269,10 +273,8 @@ else:
                         pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
                         fig = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.4, color_discrete_sequence=chosen_color)
                     elif "Sunburst" in chart_type:
-                        # กราฟวงกลมซ้อนสองชั้น แสดงทั้งหมวดหลักและย่อยสวยงามมาก
                         fig = px.sunburst(expense_df, path=['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'], values='จำนวนเงิน', color_discrete_sequence=chosen_color)
                     else:
-                        # กราฟแบบกล่องกระจายพื้นที่ตามขนาดจำนวนเงิน
                         fig = px.treemap(expense_df, path=['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'], values='จำนวนเงิน', color_discrete_sequence=chosen_color)
                     
                     fig.update_layout(margin=dict(t=10, b=10, l=10, r=10))
@@ -283,7 +285,6 @@ else:
             with col_chart2:
                 st.markdown("#### 🔬 ตารางความถี่และรายละเอียดการวิเคราะห์ยอดเงิน")
                 if not expense_df.empty:
-                    # ตารางสรุปแยกตามหมวดหมู่ย่อยเรียงจากมากไปน้อยเพื่อวิเคราะห์แนวโน้มอย่างละเอียด
                     analysis_table = expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
                     analysis_table = analysis_table.sort_values(by="จำนวนเงิน", ascending=False)
                     analysis_table['สัดส่วน (%)'] = (analysis_table['จำนวนเงิน'] / exp * 100).round(1)
@@ -304,9 +305,8 @@ else:
         st.progress(progress_percent)
         st.caption(f"สะสมแล้ว ฿{total_study_savings:,.2f} จากเป้าหมาย ฿{GOAL_STUDY:,.2f} ({progress_percent*100:.1f}%)")
 
-    # --- Tab 4: ตั้งค่าและจัดการ (เพิ่มระบบจัดการหมวดหมู่หลัก/ย่อย) ---
+    # --- Tab 4: ตั้งค่าและจัดการ ---
     with tab4:
-        # ส่วนที่ 1: จัดการหมวดหมู่หลักและหมวดหมู่ย่อยได้เอง
         st.subheader("📁 เพิ่ม / ลด / แก้ไข หมวดหมู่ทั้งหมด")
         st.write("หมอสามารถพิมพ์แก้ไข เพิ่มแถวใหม่ หรือลบแถวหมวดหมู่หลักและย่อยได้ที่ตารางนี้เลยครับ (เมื่อแก้เสร็จแล้วกดบันทึกเพื่ออัปเดตระบบระบบกรอกข้อมูล)")
         edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v4")
