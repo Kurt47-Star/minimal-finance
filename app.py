@@ -10,34 +10,73 @@ import json
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
-# 🎨 แก้ไข CSS ให้รองรับโหมด Dark/Light อัตโนมัติ (ใช้ CSS Variables ของ Streamlit)
-st.markdown("""
+# 🎨 ธีมสี Honey Pot
+COLOR_BG = "#ededed"
+COLOR_CARD = "#ffffff"
+COLOR_NAVY = "#102937"
+COLOR_TEAL = "#124d54"
+COLOR_ORANGE = "#f9744b"
+COLOR_BEIGE = "#e1d9cf"
+
+# 🔤 CSS สไตล์ Soft UI & Poppins Font
+st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Prompt', sans-serif !important; }
-    h1 { font-weight: 700; text-align: center; margin-bottom: 1.5rem; }
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap');
     
-    /* ปุ่มต่างๆ */
-    .stButton>button { border-radius: 8px; font-weight: 500; padding: 10px; }
-    .quick-add-text { font-size: 16px; font-weight: bold; margin-bottom: 5px; opacity: 0.8; }
+    /* บังคับใช้ฟอนต์ Poppins (ตัวเลข/อังกฤษ) และ Prompt (ภาษาไทย) */
+    html, body, [class*="css"] {{ 
+        font-family: 'Poppins', 'Prompt', sans-serif !important; 
+        color: {COLOR_NAVY};
+    }}
     
-    /* กล่อง Metric Card ปรับให้เข้ากับโหมดมืด/สว่าง */
-    .metric-card { 
-        background-color: var(--secondary-background-color); 
-        padding: 20px; 
+    /* เปลี่ยนสีพื้นหลังแอป */
+    .stApp {{ background-color: {COLOR_BG}; }}
+    
+    h1, h2, h3 {{ font-weight: 700; color: {COLOR_NAVY}; }}
+    
+    /* แต่งปุ่มสไตล์คลีน */
+    .stButton>button {{ 
         border-radius: 12px; 
-        text-align: center; 
-        border: 1px solid var(--border-color); 
-    }
+        font-weight: 500; 
+        padding: 10px; 
+        border: 1px solid {COLOR_BEIGE};
+        background-color: {COLOR_CARD};
+        color: {COLOR_NAVY};
+        box-shadow: 0 4px 6px rgba(16, 41, 55, 0.04);
+        transition: all 0.3s ease;
+    }}
+    .stButton>button:hover {{
+        border-color: {COLOR_ORANGE};
+        color: {COLOR_ORANGE};
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(249, 116, 75, 0.15);
+    }}
+    
+    .quick-add-text {{ font-size: 18px; font-weight: 600; margin-bottom: 8px; color: {COLOR_NAVY}; }}
+    
+    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) เลียนแบบรูปตัวอย่าง */
+    .metric-card {{ 
+        background-color: {COLOR_CARD}; 
+        padding: 24px; 
+        border-radius: 20px; 
+        text-align: left; 
+        box-shadow: 0 10px 30px rgba(16, 41, 55, 0.05); 
+        border: none;
+        margin-bottom: 1rem;
+    }}
+    .metric-title {{ color: {COLOR_TEAL}; font-size: 15px; font-weight: 500; opacity: 0.9; margin-bottom: 5px; }}
+    .metric-title-alert {{ color: {COLOR_ORANGE}; font-size: 15px; font-weight: 600; margin-bottom: 5px; }}
+    .metric-value {{ color: {COLOR_NAVY}; font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }}
+    .metric-currency {{ color: {COLOR_BEIGE}; font-size: 14px; font-weight: 500; margin-top: 5px; }}
     
     /* ซ่อนลูกศรในช่องกรอกตัวเลข */
-    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button {{ -webkit-appearance: none; margin: 0; }}
     </style>
 """, unsafe_allow_html=True)
 
-st.title("☁️ Minimal Finance Pro")
+st.title("Minimal Finance Pro")
 
-# --- ระบบเชื่อมต่อคลาวด์ (Google Sheets) ---
+# --- ระบบเชื่อมต่อคลาวด์ ---
 @st.cache_resource
 def init_connection():
     creds_dict = json.loads(st.secrets["google_credentials"])
@@ -54,7 +93,6 @@ except Exception as e:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
     st.stop()
 
-# ตรวจสอบตาราง (สร้างอัตโนมัติถ้าไม่มี)
 try:
     qa_sheet = client.open(spreadsheet_name).worksheet("QuickAdds")
 except gspread.exceptions.WorksheetNotFound:
@@ -100,49 +138,47 @@ df = load_data()
 qa_df = load_quick_adds()
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# 🎨 กำหนดพาเลตสีสุดมินิมอล (Teal, Orange, Yellow, Purple แบบในรูป)
-MINIMAL_COLORS = {
-    "รายรับ": "#2dd4bf",     # Teal (ฟ้าอมเขียว)
-    "รายจ่าย": "#fb923c",    # Orange (ส้ม)
-    "เงินออม": "#fcd34d",    # Yellow (เหลืองพาสเทล)
-    "เงินลงทุน": "#c084fc",  # Purple (ม่วง)
-    "เงินสุทธิ": "#a3e635"   # Green (เขียวอ่อน)
+# 🎨 Map สีให้ตรงกับประเภท (Honey Pot Palette)
+HONEY_POT_MAP = {
+    "รายรับ": COLOR_TEAL,     # เขียวอมฟ้า
+    "รายจ่าย": COLOR_ORANGE,  # ส้ม
+    "เงินออม": COLOR_NAVY,    # กรมท่า
+    "เงินลงทุน": COLOR_BEIGE  # เบจ
 }
 
 # --- แถบเมนูด้านข้างสลับโหมด ---
-st.sidebar.markdown("## ⚙️ โหมดการใช้งาน")
-app_mode = st.sidebar.radio("เลือกหน้าตาแอป:", ["📱 โหมดมือถือ (เน้นบันทึกไว)", "💻 โหมดคอมพิวเตอร์ (จัดเต็ม)"])
+st.sidebar.markdown("## ⚙️ Settings")
+app_mode = st.sidebar.radio("Layout Mode:", ["📱 Mobile Mode", "💻 Desktop Mode"])
 st.sidebar.markdown("---")
 
 # ==========================================
 # 📱 โหมดมือถือ (Mobile Mode)
 # ==========================================
-if app_mode == "📱 โหมดมือถือ (เน้นบันทึกไว)":
-    st.title("☁️ Finance (Mobile)")
-    st.markdown("<p class='quick-add-text'>⚡ บันทึกด่วน</p>", unsafe_allow_html=True)
+if app_mode == "📱 Mobile Mode":
+    st.markdown("<p class='quick-add-text'>Quick Actions</p>", unsafe_allow_html=True)
     if not qa_df.empty:
         for i, row in qa_df.iterrows():
             if st.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"mb_qa_{i}"):
                 sheet.append_row([str(datetime.date.today()), str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
-                st.toast("บันทึกด่วนสำเร็จ! ✨")
+                st.toast("Success! ✨")
                 st.cache_data.clear()
                 st.rerun()
                 
     st.markdown("---")
-    st.markdown("<p class='quick-add-text'>📝 บันทึกใหม่</p>", unsafe_allow_html=True)
-    type_entry = st.selectbox("ประเภท", ["💸 รายจ่าย", "📥 รายรับ", "🐷 เงินออม", "📈 เงินลงทุน"])
+    st.markdown("<p class='quick-add-text'>New Transaction</p>", unsafe_allow_html=True)
+    type_entry = st.selectbox("Type", ["💸 รายจ่าย", "📥 รายรับ", "🐷 เงินออม", "📈 เงินลงทุน"])
     main_options = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
-    main_cat = st.selectbox("หมวดหมู่หลัก", main_options, key="mb_main")
+    main_cat = st.selectbox("Category", main_options, key="mb_main")
     sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
-    sub_cat = st.selectbox("รายละเอียดหมวดหมู่", sub_options, key="mb_sub")
+    sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
     
-    date_shortcut = st.radio("เลือกวันที่", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True)
+    date_shortcut = st.radio("Date", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True)
     chosen_date = datetime.date.today() if date_shortcut == "วันนี้" else (datetime.date.today() - datetime.timedelta(days=1) if date_shortcut == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.date.today()))
 
     with st.form("mobile_form", clear_on_submit=True):
-        amount = st.number_input("จำนวนเงิน (บาท)", min_value=0.0, step=50.0, format="%.2f")
-        note = st.text_input("บันทึกสั้นๆ", placeholder="บันทึกกันลืม...")
-        if st.form_submit_button("💾 ยืนยันการบันทึก", use_container_width=True) and amount > 0:
+        amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f")
+        note = st.text_input("Note", placeholder="Optional...")
+        if st.form_submit_button("Save Transaction", use_container_width=True) and amount > 0:
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
             sheet.append_row([str(chosen_date), type_entry.split(" ")[1], full_category, amount, note])
             st.cache_data.clear()
@@ -152,55 +188,55 @@ if app_mode == "📱 โหมดมือถือ (เน้นบันทึ
 # 💻 โหมดคอมพิวเตอร์ (Desktop Mode)
 # ==========================================
 else:
-    tab1, tab2, tab3, tab4 = st.tabs(["✨ บันทึกเงิน", "📊 วิเคราะห์ & Infographic", "🎯 เป้าหมาย", "⚙️ ตั้งค่า/จัดการ"])
+    tab1, tab2, tab3, tab4 = st.tabs(["✨ Transaction", "📊 Dashboard", "🎯 Goals", "⚙️ Settings"])
 
     with tab1:
         col_main, col_space = st.columns([2, 1])
         with col_main:
-            st.markdown("<p class='quick-add-text'>⚡ บันทึกด่วน</p>", unsafe_allow_html=True)
+            st.markdown("<p class='quick-add-text'>Quick Actions</p>", unsafe_allow_html=True)
             if not qa_df.empty:
                 cols = st.columns(4)
                 for i, row in qa_df.iterrows():
                     col = cols[i % 4]
                     if col.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"dt_qa_{i}"):
                         sheet.append_row([str(datetime.date.today()), str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
-                        st.toast("บันทึกด่วนสำเร็จ! ✨")
+                        st.toast("Success! ✨")
                         st.cache_data.clear()
                         st.rerun()
                         
             st.markdown("---")
-            st.markdown("<p class='quick-add-text'>📝 บันทึกลงรายละเอียด</p>", unsafe_allow_html=True)
-            type_entry = st.radio("ประเภท", ["📥 รายรับ", "💸 รายจ่าย", "🐷 เงินออม", "📈 เงินลงทุน"], horizontal=True, label_visibility="collapsed")
+            st.markdown("<p class='quick-add-text'>New Transaction</p>", unsafe_allow_html=True)
+            type_entry = st.radio("Type", ["📥 รายรับ", "💸 รายจ่าย", "🐷 เงินออม", "📈 เงินลงทุน"], horizontal=True, label_visibility="collapsed")
             
             c_main, c_sub = st.columns(2)
             with c_main:
                 main_options = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
-                main_cat = st.selectbox("หมวดหมู่หลัก", main_options, key="dt_main")
+                main_cat = st.selectbox("Category", main_options, key="dt_main")
             with c_sub:
                 sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
-                sub_cat = st.selectbox("รายละเอียดหมวดหมู่", sub_options, key="dt_sub")
+                sub_cat = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
             c_date_tool, c_note_tool = st.columns([1, 2])
             with c_date_tool:
-                date_shortcut_dt = st.radio("เลือกวันที่", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="dt_date_shortcut")
+                date_shortcut_dt = st.radio("Date", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="dt_date_shortcut")
                 chosen_date_dt = datetime.date.today() if date_shortcut_dt == "วันนี้" else (datetime.date.today() - datetime.timedelta(days=1) if date_shortcut_dt == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.date.today(), key="dt_date_picker"))
 
             with st.form("desktop_form", clear_on_submit=True):
-                amount = st.number_input("จำนวนเงิน (บาท)", min_value=0.0, step=50.0, format="%.2f")
-                note = st.text_input("รายละเอียดเพิ่มเติม", placeholder="บันทึกสั้นๆ...")
-                if st.form_submit_button("บันทึกรายการ", use_container_width=True) and amount > 0:
+                amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f")
+                note = st.text_input("Note", placeholder="...")
+                if st.form_submit_button("Save Transaction", use_container_width=True) and amount > 0:
                     full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
                     sheet.append_row([str(chosen_date_dt), type_entry.split(" ")[1], full_category, amount, note])
                     st.cache_data.clear()
                     st.rerun()
 
-    # --- Tab 2: วิเคราะห์ & Infographic (ดีไซน์ตามรูป Reference) ---
+    # --- Tab 2: Dashboard (ดีไซน์ Soft UI) ---
     with tab2:
         if not df.empty:
             df_chart = df.copy()
             df_chart['วันที่'] = pd.to_datetime(df_chart['วันที่'])
             
-            # --- กล่องสรุปตัวเลขด้านบน ---
+            # --- กล่องสรุปตัวเลข (Metric Cards) ---
             inc = df_chart[df_chart['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_chart[df_chart['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             sav = df_chart[df_chart['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum()
@@ -208,17 +244,21 @@ else:
             net = inc - (exp + sav + inv)
 
             m1, m2, m3, m4, m5 = st.columns(5)
-            m1.markdown(f"<div class='metric-card'><p style='margin:0;opacity:0.7;font-size:14px;'>ยอดเงินสุทธิ</p><h3 style='margin:0;color:{MINIMAL_COLORS['เงินสุทธิ'] if net >= 0 else '#ef4444'};'>฿{net:,.0f}</h3></div>", unsafe_allow_html=True)
-            m2.markdown(f"<div class='metric-card'><p style='margin:0;opacity:0.7;font-size:14px;'>รายรับรวม</p><h3 style='margin:0;color:{MINIMAL_COLORS['รายรับ']};'>฿{inc:,.0f}</h3></div>", unsafe_allow_html=True)
-            m3.markdown(f"<div class='metric-card'><p style='margin:0;opacity:0.7;font-size:14px;'>รายจ่ายรวม</p><h3 style='margin:0;color:{MINIMAL_COLORS['รายจ่าย']};'>฿{exp:,.0f}</h3></div>", unsafe_allow_html=True)
-            m4.markdown(f"<div class='metric-card'><p style='margin:0;opacity:0.7;font-size:14px;'>เงินออม</p><h3 style='margin:0;color:{MINIMAL_COLORS['เงินออม']};'>฿{sav:,.0f}</h3></div>", unsafe_allow_html=True)
-            m5.markdown(f"<div class='metric-card'><p style='margin:0;opacity:0.7;font-size:14px;'>ลงทุน</p><h3 style='margin:0;color:{MINIMAL_COLORS['เงินลงทุน']};'>฿{inv:,.0f}</h3></div>", unsafe_allow_html=True)
-            
-            st.markdown("<br>", unsafe_allow_html=True) # เว้นบรรทัด
+            # เงินสุทธิ
+            net_title_class = "metric-title" if net >= 0 else "metric-title-alert"
+            m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Balance</div><div class='metric-value'>฿{net:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            # รายรับ
+            m2.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_TEAL};'>Income ↗</div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            # รายจ่าย
+            m3.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_ORANGE};'>Expenses ↘</div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            # เงินออม
+            m4.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_NAVY};'>Savings ↗</div><div class='metric-value'>฿{sav:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            # ลงทุน
+            m5.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_NAVY};'>Investments ↗</div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
             # --- 📈 กราฟเส้นแบบ Minimal (มีรายวัน, รายเดือน, รายปี) ---
-            st.markdown("### 📈 แนวโน้มการเงิน (Trend Chart)")
-            time_frame = st.radio("ความละเอียด:", ["รายวัน", "รายเดือน", "รายปี"], horizontal=True, label_visibility="collapsed")
+            st.markdown("<p class='quick-add-text' style='margin-top: 20px;'>Trend Analysis</p>", unsafe_allow_html=True)
+            time_frame = st.radio("Timeframe:", ["รายวัน", "รายเดือน", "รายปี"], horizontal=True, label_visibility="collapsed")
             
             df_trend = df_chart.copy()
             if time_frame == "รายปี":
@@ -230,104 +270,104 @@ else:
                 
             trend_data = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
             
-            # สร้างกราฟเส้นที่บาง มีจุด และไม่มีเส้นตารางกวนใจ
             fig_trend = px.line(trend_data, x='เวลา', y='จำนวนเงิน', color='ประเภท', 
-                                color_discrete_map=MINIMAL_COLORS, markers=True, line_shape='linear')
+                                color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
             
-            # แต่งเส้นให้เล็ก + จุดไข่ปลา
-            fig_trend.update_traces(line=dict(width=2), marker=dict(size=8, line=dict(width=1, color='white')))
-            
-            # ลบ Grid ให้กลายเป็นสไตล์ Minimal (ใช้คำสั่ง theme="streamlit" ด้านล่างเพื่อปรับมืด/สว่างอัตโนมัติ)
+            # ปรับแต่งกราฟให้คลีน เข้ากับ Soft UI
+            fig_trend.update_traces(line=dict(width=3), marker=dict(size=8, line=dict(width=2, color=COLOR_CARD)))
             fig_trend.update_layout(
-                xaxis=dict(showgrid=False, title="", zeroline=False, showline=True, linewidth=1, linecolor='rgba(128,128,128,0.3)'),
-                yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.1)', title="", zeroline=False),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title="", font=dict(size=14)),
-                hovermode="x unified",
-                margin=dict(t=10, b=0, l=0, r=0)
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(showgrid=False, title="", showline=False, tickfont=dict(color=COLOR_NAVY, family='Poppins')),
+                yaxis=dict(showgrid=True, gridcolor='rgba(16, 41, 55, 0.05)', title="", zeroline=False, tickfont=dict(color=COLOR_NAVY, family='Poppins')),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title="", font=dict(family='Poppins', color=COLOR_NAVY)),
+                hovermode="x unified", margin=dict(t=10, b=0, l=0, r=0)
             )
-            # สำคัญมาก: ใส่ theme="streamlit" เพื่อให้กราฟเปลี่ยนสีพื้นหลัง/อักษร ตามโหมด Dark/Light ของเครื่อง
-            st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
+            st.plotly_chart(fig_trend, use_container_width=True)
             
             st.markdown("---")
             
             # --- ⭕ Infographic วงกลมบาง (Thin Circle Chart) ---
-            st.markdown("### ⭕ สัดส่วนค่าใช้จ่าย (Infographic)")
-            col_chart1, col_chart2 = st.columns([1, 1])
+            col_chart1, col_chart2 = st.columns([1, 1.2])
             expense_df = df_chart[df_chart['ประเภท'] == 'รายจ่าย']
             
             with col_chart1:
-                st.markdown("<p style='text-align:center; opacity:0.7;'>รายจ่ายแยกตามหมวดหมู่หลัก</p>", unsafe_allow_html=True)
+                st.markdown("<p class='quick-add-text'>Expense Breakdown</p>", unsafe_allow_html=True)
                 if not expense_df.empty:
                     pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
                     
-                    # hole=0.85 คือทำรูตรงกลางให้กว้างมากๆ จนกลายเป็นแค่เส้นรอบวง (เหมือนในรูป)
-                    fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.85, 
-                                     color_discrete_sequence=px.colors.qualitative.Pastel)
+                    # ใช้สี Honey Pot แบบไล่เฉด (ถ้าหมวดเยอะ ให้ Plotly ช่วยเจนเนอเรตสีในโทนใกล้เคียง)
+                    fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.75, 
+                                     color_discrete_sequence=[COLOR_ORANGE, COLOR_TEAL, COLOR_NAVY, COLOR_BEIGE, "#d84f2a", "#094044"])
                     
-                    # เอาตัวอักษรชี้ออกไปด้านนอกวงกลม (เหมือน Infographic)
-                    fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)))
-                    fig_pie.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
+                    fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)), textfont=dict(family='Poppins', color=COLOR_NAVY))
+                    fig_pie.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
                     
-                    st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
+                    st.plotly_chart(fig_pie, use_container_width=True)
                 else:
-                    st.info("ไม่มีข้อมูลรายจ่าย")
+                    st.info("No expense data.")
                     
             with col_chart2:
-                st.markdown("<p style='text-align:center; opacity:0.7;'>เจาะลึกหมวดหมู่ย่อย (Sub-categories)</p>", unsafe_allow_html=True)
+                st.markdown("<p class='quick-add-text'>Top Sub-categories</p>", unsafe_allow_html=True)
                 if not expense_df.empty:
                     sub_data = expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
-                    sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(10) # โชว์แค่ 10 อันดับแรกจะได้ไม่รก
+                    sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8) # โชว์ 8 อันดับแรก
                     
-                    fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h',
-                                     color_discrete_sequence=px.colors.qualitative.Pastel)
+                    fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', orientation='h',
+                                     color_discrete_sequence=[COLOR_TEAL]) # ใช้สี Teal สำหรับบาร์โค้ด
                     
+                    # ทำให้กราฟแท่งขอบมนเล็กน้อย (เทคนิค Plotly) และซ่อนแกน
+                    fig_bar.update_traces(marker_line_width=0, opacity=0.9)
                     fig_bar.update_layout(
-                        xaxis=dict(showgrid=False, title="", zeroline=False),
-                        yaxis=dict(showgrid=False, title="", autorange="reversed"), # กลับหัวให้มากสุดอยู่บน
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(showgrid=False, title="", zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, title="", autorange="reversed", tickfont=dict(family='Poppins', color=COLOR_NAVY)),
                         showlegend=False, margin=dict(t=20, b=20, l=0, r=20)
                     )
-                    st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
+                    # ใส่ตัวเลขกำกับด้านขวาสุดของแท่ง
+                    fig_bar.update_traces(texttemplate='฿%{x:,.0f}', textposition='outside', textfont=dict(family='Poppins', color=COLOR_NAVY))
+                    
+                    st.plotly_chart(fig_bar, use_container_width=True)
                 else:
-                    st.info("ไม่มีข้อมูลรายจ่าย")
+                    st.info("No expense data.")
                     
         else:
-            st.info("ยังไม่มีข้อมูล กรุณาบันทึกข้อมูลก่อนครับ")
+            st.info("No data available.")
 
     with tab3:
-        st.subheader("🎯 เป้าหมายการเงิน")
+        st.subheader("🎯 Goals")
         total_study_savings = df[(df['ประเภท'] == 'เงินออม') & (df['หมวดหมู่หลัก'] == 'ออมเพื่อเรียนต่อ/อนาคต')]['จำนวนเงิน'].sum() if not df.empty else 0
         GOAL_STUDY = 100000 
         progress_percent = min(total_study_savings / GOAL_STUDY, 1.0)
-        st.write("✈️ **กองทุนเพื่ออนาคต (เรียนต่อ/สอบ)**")
+        st.write("✈️ **GRE / Future Studies Fund**")
         st.progress(progress_percent)
-        st.caption(f"สะสมแล้ว ฿{total_study_savings:,.2f} จากเป้าหมาย ฿{GOAL_STUDY:,.2f} ({progress_percent*100:.1f}%)")
+        st.caption(f"Saved ฿{total_study_savings:,.2f} of ฿{GOAL_STUDY:,.2f} ({progress_percent*100:.1f}%)")
 
     with tab4:
-        st.subheader("📁 เพิ่ม / ลด / แก้ไข หมวดหมู่ทั้งหมด")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v6")
-        if st.button("💾 บันทึกการตั้งค่าหมวดหมู่", use_container_width=True):
+        st.subheader("📁 Categories Editor")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v7")
+        if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
-            st.success("อัปเดตฐานข้อมูลหมวดหมู่เรียบร้อยแล้วครับ! ✨")
+            st.success("Categories updated! ✨")
             st.rerun()
 
         st.markdown("---")
-        st.subheader("⚡ จัดการปุ่มบันทึกด่วน")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v6")
-        if st.button("💾 บันทึกปุ่มด่วน", use_container_width=True):
+        st.subheader("⚡ Quick Adds Editor")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v7")
+        if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
-            st.success("อัปเดตปุ่มสำเร็จ!")
+            st.success("Quick adds updated!")
             st.rerun()
             
         st.markdown("---")
-        st.subheader("✏️ แก้ไข/ลบ ประวัติการเงินทั้งหมด")
+        st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v6")
-            if st.button("💾 บันทึกประวัติลงคลาวด์", use_container_width=True):
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v7")
+            if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
                 sheet.update(range_name="A1", values=[edited_df.columns.values.tolist()] + edited_df.values.tolist())
-                st.success("อัปเดตประวัติการเงินสำเร็จ!")
+                st.success("Data updated!")
                 st.rerun()
