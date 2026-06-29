@@ -10,67 +10,53 @@ import json
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
-# 🎨 ธีมสี Honey Pot
-COLOR_BG = "#ededed"
-COLOR_CARD = "#ffffff"
-COLOR_NAVY = "#102937"
-COLOR_TEAL = "#124d54"
-COLOR_ORANGE = "#f9744b"
-COLOR_BEIGE = "#e1d9cf"
-
-# 🔤 CSS สไตล์ Soft UI & Poppins Font
-st.markdown(f"""
+# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode อัตโนมัติ
+st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap');
     
-    /* บังคับใช้ฟอนต์ Poppins (ตัวเลข/อังกฤษ) และ Prompt (ภาษาไทย) */
-    html, body, [class*="css"] {{ 
+    /* ใช้ var(--text-color) ของ Streamlit เพื่อให้เปลี่ยนสีขาว-ดำตามโหมดมืด/สว่างอัตโนมัติ */
+    html, body, [class*="css"] { 
         font-family: 'Poppins', 'Prompt', sans-serif !important; 
-        color: {COLOR_NAVY};
-    }}
+    }
     
-    /* เปลี่ยนสีพื้นหลังแอป */
-    .stApp {{ background-color: {COLOR_BG}; }}
-    
-    h1, h2, h3 {{ font-weight: 700; color: {COLOR_NAVY}; }}
+    h1, h2, h3 { font-weight: 700; color: var(--text-color); }
     
     /* แต่งปุ่มสไตล์คลีน */
-    .stButton>button {{ 
+    .stButton>button { 
         border-radius: 12px; 
         font-weight: 500; 
         padding: 10px; 
-        border: 1px solid {COLOR_BEIGE};
-        background-color: {COLOR_CARD};
-        color: {COLOR_NAVY};
-        box-shadow: 0 4px 6px rgba(16, 41, 55, 0.04);
+        border: 1px solid var(--border-color);
+        background-color: var(--secondary-background-color);
+        color: var(--text-color);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         transition: all 0.3s ease;
-    }}
-    .stButton>button:hover {{
-        border-color: {COLOR_ORANGE};
-        color: {COLOR_ORANGE};
+    }
+    .stButton>button:hover {
+        border-color: #f9744b;
+        color: #f9744b;
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(249, 116, 75, 0.15);
-    }}
+    }
     
-    .quick-add-text {{ font-size: 18px; font-weight: 600; margin-bottom: 8px; color: {COLOR_NAVY}; }}
+    .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text-color); opacity: 0.9; }
     
-    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) เลียนแบบรูปตัวอย่าง */
-    .metric-card {{ 
-        background-color: {COLOR_CARD}; 
+    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) ที่ปรับตัวตามโหมดมืดสว่าง */
+    .metric-card { 
+        background-color: var(--secondary-background-color); 
         padding: 24px; 
         border-radius: 20px; 
         text-align: left; 
-        box-shadow: 0 10px 30px rgba(16, 41, 55, 0.05); 
-        border: none;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04); 
+        border: 1px solid var(--border-color);
         margin-bottom: 1rem;
-    }}
-    .metric-title {{ color: {COLOR_TEAL}; font-size: 15px; font-weight: 500; opacity: 0.9; margin-bottom: 5px; }}
-    .metric-title-alert {{ color: {COLOR_ORANGE}; font-size: 15px; font-weight: 600; margin-bottom: 5px; }}
-    .metric-value {{ color: {COLOR_NAVY}; font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }}
-    .metric-currency {{ color: {COLOR_BEIGE}; font-size: 14px; font-weight: 500; margin-top: 5px; }}
+    }
+    .metric-title { font-size: 15px; font-weight: 500; opacity: 0.7; margin-bottom: 5px; color: var(--text-color); }
+    .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
+    .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
     /* ซ่อนลูกศรในช่องกรอกตัวเลข */
-    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button {{ -webkit-appearance: none; margin: 0; }}
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -138,13 +124,16 @@ df = load_data()
 qa_df = load_quick_adds()
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# 🎨 Map สีให้ตรงกับประเภท (Honey Pot Palette)
+# 🎨 ชุดสี Honey Pot & Soft Tones ที่ปรับให้มองเห็นชัดทั้ง Light / Dark Mode
 HONEY_POT_MAP = {
-    "รายรับ": COLOR_TEAL,     # เขียวอมฟ้า
-    "รายจ่าย": COLOR_ORANGE,  # ส้ม
-    "เงินออม": COLOR_NAVY,    # กรมท่า
-    "เงินลงทุน": COLOR_BEIGE  # เบจ
+    "รายรับ": "#2a9d8f",     # Teal (ปรับให้เข้มขึ้นนิดนึงเพื่อให้อ่านง่ายบนพื้นขาวและพื้นดำ)
+    "รายจ่าย": "#f9744b",    # Orange
+    "เงินออม": "#457b9d",    # Blue
+    "เงินลงทุน": "#e9c46a"   # Gold/Beige
 }
+
+# ชุดสีหลากหลายแบบคุมโทน สำหรับกราฟแท่งหมวดหมู่ย่อย
+SUB_CAT_PALETTE = ["#124d54", "#f9744b", "#2a9d8f", "#e9c46a", "#457b9d", "#f4a261", "#8ab17d", "#e76f51"]
 
 # --- แถบเมนูด้านข้างสลับโหมด ---
 st.sidebar.markdown("## ⚙️ Settings")
@@ -230,7 +219,7 @@ else:
                     st.cache_data.clear()
                     st.rerun()
 
-    # --- Tab 2: Dashboard (ดีไซน์ Soft UI) ---
+    # --- Tab 2: Dashboard (ดีไซน์ Soft UI ที่รองรับ Dark Mode) ---
     with tab2:
         if not df.empty:
             df_chart = df.copy()
@@ -244,19 +233,14 @@ else:
             net = inc - (exp + sav + inv)
 
             m1, m2, m3, m4, m5 = st.columns(5)
-            # เงินสุทธิ
-            net_title_class = "metric-title" if net >= 0 else "metric-title-alert"
-            m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Balance</div><div class='metric-value'>฿{net:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            # รายรับ
-            m2.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_TEAL};'>Income ↗</div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            # รายจ่าย
-            m3.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_ORANGE};'>Expenses ↘</div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            # เงินออม
-            m4.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_NAVY};'>Savings ↗</div><div class='metric-value'>฿{sav:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            # ลงทุน
-            m5.markdown(f"<div class='metric-card'><div class='metric-title' style='color:{COLOR_NAVY};'>Investments ↗</div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            # ใช้ CSS ภายใน (Inline style) เฉพาะตรงไอคอนลูกศร เพื่อให้สีสวยเด่นตลอดเวลา ส่วนตัวหนังสืออื่นๆ จะเปลี่ยนสีตามโหมดเครื่อง
+            m1.markdown(f"<div class='metric-card'><div class='metric-title'>Net Balance</div><div class='metric-value'>฿{net:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#f9744b;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
-            # --- 📈 กราฟเส้นแบบ Minimal (มีรายวัน, รายเดือน, รายปี) ---
+            # --- 📈 กราฟเส้นแบบ Minimal (ปรับแต่งให้เนียนกับ Dark/Light mode) ---
             st.markdown("<p class='quick-add-text' style='margin-top: 20px;'>Trend Analysis</p>", unsafe_allow_html=True)
             time_frame = st.radio("Timeframe:", ["รายวัน", "รายเดือน", "รายปี"], horizontal=True, label_visibility="collapsed")
             
@@ -273,20 +257,20 @@ else:
             fig_trend = px.line(trend_data, x='เวลา', y='จำนวนเงิน', color='ประเภท', 
                                 color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
             
-            # ปรับแต่งกราฟให้คลีน เข้ากับ Soft UI
-            fig_trend.update_traces(line=dict(width=3), marker=dict(size=8, line=dict(width=2, color=COLOR_CARD)))
+            fig_trend.update_traces(line=dict(width=3), marker=dict(size=8, line=dict(width=1, color="white")))
             fig_trend.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=False, title="", showline=False, tickfont=dict(color=COLOR_NAVY, family='Poppins')),
-                yaxis=dict(showgrid=True, gridcolor='rgba(16, 41, 55, 0.05)', title="", zeroline=False, tickfont=dict(color=COLOR_NAVY, family='Poppins')),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title="", font=dict(family='Poppins', color=COLOR_NAVY)),
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', # พื้นหลังโปร่งใส
+                xaxis=dict(showgrid=False, title="", showline=False),
+                yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.1)', title="", zeroline=False),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
                 hovermode="x unified", margin=dict(t=10, b=0, l=0, r=0)
             )
-            st.plotly_chart(fig_trend, use_container_width=True)
+            # ใช้ theme="streamlit" เพื่อให้แกน ตัวหนังสือ และฟอนต์ ปรับเป็น Dark Mode หรือ Light Mode อัตโนมัติ
+            st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
             
             st.markdown("---")
             
-            # --- ⭕ Infographic วงกลมบาง (Thin Circle Chart) ---
+            # --- ⭕ Infographic สัดส่วนรายจ่าย ---
             col_chart1, col_chart2 = st.columns([1, 1.2])
             expense_df = df_chart[df_chart['ประเภท'] == 'รายจ่าย']
             
@@ -295,14 +279,13 @@ else:
                 if not expense_df.empty:
                     pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
                     
-                    # ใช้สี Honey Pot แบบไล่เฉด (ถ้าหมวดเยอะ ให้ Plotly ช่วยเจนเนอเรตสีในโทนใกล้เคียง)
                     fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.75, 
-                                     color_discrete_sequence=[COLOR_ORANGE, COLOR_TEAL, COLOR_NAVY, COLOR_BEIGE, "#d84f2a", "#094044"])
+                                     color_discrete_sequence=SUB_CAT_PALETTE)
                     
-                    fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)), textfont=dict(family='Poppins', color=COLOR_NAVY))
+                    fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)))
                     fig_pie.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
                     
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
                 else:
                     st.info("No expense data.")
                     
@@ -312,21 +295,19 @@ else:
                     sub_data = expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
                     sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8) # โชว์ 8 อันดับแรก
                     
-                    fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', orientation='h',
-                                     color_discrete_sequence=[COLOR_TEAL]) # ใช้สี Teal สำหรับบาร์โค้ด
+                    # 💡 แก้ไข: ให้ color เป็น 'หมวดหมู่ย่อย' เพื่อให้แต่ละแท่งดึงสีจากชุดสี (Palette) ออกมาใช้ ทำให้ได้กราฟหลากสีที่ยังคงคุมโทน
+                    fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่ย่อย', orientation='h',
+                                     color_discrete_sequence=SUB_CAT_PALETTE) 
                     
-                    # ทำให้กราฟแท่งขอบมนเล็กน้อย (เทคนิค Plotly) และซ่อนแกน
-                    fig_bar.update_traces(marker_line_width=0, opacity=0.9)
+                    fig_bar.update_traces(marker_line_width=0, opacity=0.9, texttemplate='฿%{x:,.0f}', textposition='outside')
                     fig_bar.update_layout(
                         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
                         xaxis=dict(showgrid=False, title="", zeroline=False, showticklabels=False),
-                        yaxis=dict(showgrid=False, title="", autorange="reversed", tickfont=dict(family='Poppins', color=COLOR_NAVY)),
+                        yaxis=dict(showgrid=False, title="", autorange="reversed"),
                         showlegend=False, margin=dict(t=20, b=20, l=0, r=20)
                     )
-                    # ใส่ตัวเลขกำกับด้านขวาสุดของแท่ง
-                    fig_bar.update_traces(texttemplate='฿%{x:,.0f}', textposition='outside', textfont=dict(family='Poppins', color=COLOR_NAVY))
                     
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
                 else:
                     st.info("No expense data.")
                     
@@ -344,7 +325,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v7")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v8")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -353,7 +334,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v7")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v8")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -364,7 +345,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v7")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v8")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
