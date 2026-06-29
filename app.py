@@ -123,12 +123,13 @@ df = load_data()
 qa_df = load_quick_adds()
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# 🎨 ชุดสี Honey Pot & Soft Tones
+# 🎨 ชุดสี Honey Pot & Soft Tones (อัปเดตเพิ่มเส้นเงินสุทธิ)
 HONEY_POT_MAP = {
     "รายรับ": "#2a9d8f",     
     "รายจ่าย": "#f9744b",    
     "เงินออม": "#457b9d",    
-    "เงินลงทุน": "#e9c46a"   
+    "เงินลงทุน": "#e9c46a",
+    "เงินสุทธิ": "#8ab17d"   # เพิ่มสีเขียวละมุน (Soft Green) สำหรับเส้นเงินสุทธิ
 }
 
 # ชุดสีคุมโทน สำหรับกราฟโดนัทและแท่งให้ล้อกัน
@@ -239,7 +240,7 @@ else:
             m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
-            # --- 📈 กราฟเส้นแบบ Minimal ---
+            # --- 📈 กราฟเส้นแบบ Minimal (เพิ่มเส้นเงินสุทธิ) ---
             st.markdown("<p class='quick-add-text' style='margin-top: 20px;'>Trend Analysis</p>", unsafe_allow_html=True)
             time_frame = st.radio("Timeframe:", ["รายวัน", "รายเดือน", "รายปี"], horizontal=True, label_visibility="collapsed")
             
@@ -251,7 +252,21 @@ else:
             else:
                 df_trend['เวลา'] = df_trend['วันที่'].dt.strftime('%Y-%m-%d')
                 
-            trend_data = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
+            trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
+            
+            # 💡 กลไกคำนวณเงินสุทธิ (Net Balance) ประจำช่วงเวลา
+            pivot_trend = trend_data_raw.pivot(index='เวลา', columns='ประเภท', values='จำนวนเงิน').fillna(0)
+            
+            # ตรวจสอบว่าคอลัมน์ไหนหายไปก็เติม 0 ไว้กัน Error
+            for col in ['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน']:
+                if col not in pivot_trend.columns:
+                    pivot_trend[col] = 0
+            
+            # คำนวณสมการ: เงินสุทธิ = รายรับ - (รายจ่าย + ออม + ลงทุน)
+            pivot_trend['เงินสุทธิ'] = pivot_trend['รายรับ'] - (pivot_trend['รายจ่าย'] + pivot_trend['เงินออม'] + pivot_trend['เงินลงทุน'])
+            
+            # แปลงตารางกลับมาให้ Plotly สามารถนำไปวาดเส้นได้
+            trend_data = pivot_trend.reset_index().melt(id_vars='เวลา', var_name='ประเภท', value_name='จำนวนเงิน')
             
             fig_trend = px.line(trend_data, x='เวลา', y='จำนวนเงิน', color='ประเภท', 
                                 color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
@@ -277,7 +292,6 @@ else:
                 if not expense_df.empty:
                     pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
                     
-                    # สร้าง Mapping กุญแจสี: ผูก 'หมวดหมู่หลัก' เข้ากับสีในพาเลต (เพื่อให้เอาไปใช้ซ้ำในกราฟบาร์ได้)
                     unique_main_cats = pie_data['หมวดหมู่หลัก'].tolist()
                     cat_color_map = {cat: SUB_CAT_PALETTE[i % len(SUB_CAT_PALETTE)] for i, cat in enumerate(unique_main_cats)}
                     
@@ -297,7 +311,6 @@ else:
                     sub_data = expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
                     sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8) 
                     
-                    # ใช้ color='หมวดหมู่หลัก' และโยน cat_color_map เข้าไป เพื่อให้แท่งสีดึงสีเดียวกับกราฟโดนัทด้านซ้ายเป๊ะๆ!
                     fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h',
                                      color_discrete_map=cat_color_map) 
                     
