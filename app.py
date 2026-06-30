@@ -123,16 +123,15 @@ df = load_data()
 qa_df = load_quick_adds()
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# 🎨 ชุดสี Honey Pot & Soft Tones (อัปเดตเพิ่มเส้นเงินสุทธิ)
+# 🎨 ชุดสี Honey Pot & Soft Tones
 HONEY_POT_MAP = {
     "รายรับ": "#2a9d8f",     
     "รายจ่าย": "#f9744b",    
     "เงินออม": "#457b9d",    
     "เงินลงทุน": "#e9c46a",
-    "เงินสุทธิ": "#8ab17d"   # เพิ่มสีเขียวละมุน (Soft Green) สำหรับเส้นเงินสุทธิ
+    "เงินสุทธิ": "#8ab17d"   
 }
 
-# ชุดสีคุมโทน สำหรับกราฟโดนัทและแท่งให้ล้อกัน
 SUB_CAT_PALETTE = ["#124d54", "#f9744b", "#e9c46a", "#2a9d8f", "#457b9d", "#f4a261", "#8ab17d", "#e76f51"]
 
 # --- แถบเมนูด้านข้างสลับโหมด ---
@@ -160,6 +159,16 @@ if app_mode == "📱 Mobile Mode":
     main_cat = st.selectbox("Category", main_options, key="mb_main")
     sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
     sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
+    
+    # 💡 เพิ่มการแสดงผลยอดเงินออมรวม (เฉพาะเมื่อเลือกโหมดเงินออม)
+    if "เงินออม" in type_entry:
+        total_sav_now = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
+        st.markdown(f"""
+            <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0 15px 0;'>
+                <p style='margin:0; font-size: 14px; opacity: 0.8; color: var(--text-color);'>💰 ปัจจุบันคุณมีเงินเก็บทั้งหมด</p>
+                <h3 style='margin:0; color: #457b9d;'>฿{total_sav_now:,.2f}</h3>
+            </div>
+        """, unsafe_allow_html=True)
     
     date_shortcut = st.radio("Date", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True)
     chosen_date = datetime.date.today() if date_shortcut == "วันนี้" else (datetime.date.today() - datetime.timedelta(days=1) if date_shortcut == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.date.today()))
@@ -205,6 +214,16 @@ else:
                 sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
                 sub_cat = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
+            # 💡 เพิ่มการแสดงผลยอดเงินออมรวม (เฉพาะเมื่อเลือกโหมดเงินออม)
+            if "เงินออม" in type_entry:
+                total_sav_now = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
+                st.markdown(f"""
+                    <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0 15px 0;'>
+                        <p style='margin:0; font-size: 14px; opacity: 0.8; color: var(--text-color);'>💰 ปัจจุบันคุณมีเงินเก็บทั้งหมด</p>
+                        <h3 style='margin:0; color: #457b9d;'>฿{total_sav_now:,.2f}</h3>
+                    </div>
+                """, unsafe_allow_html=True)
+
             c_date_tool, c_note_tool = st.columns([1, 2])
             with c_date_tool:
                 date_shortcut_dt = st.radio("Date", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="dt_date_shortcut")
@@ -240,7 +259,7 @@ else:
             m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
-            # --- 📈 กราฟเส้นแบบ Minimal (เพิ่มเส้นเงินสุทธิ) ---
+            # --- 📈 กราฟเส้นแบบ Minimal ---
             st.markdown("<p class='quick-add-text' style='margin-top: 20px;'>Trend Analysis</p>", unsafe_allow_html=True)
             time_frame = st.radio("Timeframe:", ["รายวัน", "รายเดือน", "รายปี"], horizontal=True, label_visibility="collapsed")
             
@@ -253,19 +272,13 @@ else:
                 df_trend['เวลา'] = df_trend['วันที่'].dt.strftime('%Y-%m-%d')
                 
             trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
-            
-            # 💡 กลไกคำนวณเงินสุทธิ (Net Balance) ประจำช่วงเวลา
             pivot_trend = trend_data_raw.pivot(index='เวลา', columns='ประเภท', values='จำนวนเงิน').fillna(0)
             
-            # ตรวจสอบว่าคอลัมน์ไหนหายไปก็เติม 0 ไว้กัน Error
             for col in ['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน']:
                 if col not in pivot_trend.columns:
                     pivot_trend[col] = 0
             
-            # คำนวณสมการ: เงินสุทธิ = รายรับ - (รายจ่าย + ออม + ลงทุน)
             pivot_trend['เงินสุทธิ'] = pivot_trend['รายรับ'] - (pivot_trend['รายจ่าย'] + pivot_trend['เงินออม'] + pivot_trend['เงินลงทุน'])
-            
-            # แปลงตารางกลับมาให้ Plotly สามารถนำไปวาดเส้นได้
             trend_data = pivot_trend.reset_index().melt(id_vars='เวลา', var_name='ประเภท', value_name='จำนวนเงิน')
             
             fig_trend = px.line(trend_data, x='เวลา', y='จำนวนเงิน', color='ประเภท', 
@@ -283,7 +296,7 @@ else:
             
             st.markdown("---")
             
-            # --- ⭕ Infographic สัดส่วนรายจ่าย (จับคู่สีให้ตรงกัน) ---
+            # --- ⭕ Infographic สัดส่วนรายจ่าย ---
             col_chart1, col_chart2 = st.columns([1, 1.2])
             expense_df = df_chart[df_chart['ประเภท'] == 'รายจ่าย']
             
