@@ -95,12 +95,14 @@ def load_data():
     records = sheet.get_all_records()
     if records:
         df = pd.DataFrame(records)
-        df['วันที่'] = pd.to_datetime(df['วันที่']).dt.date
+        # รองรับทั้งแบบ วันที่อย่างเดียว และ วันที่พร้อมเวลา (Datetime)
+        df['วันเวลา'] = pd.to_datetime(df['วันที่'], errors='coerce')
+        df['วันที่_date'] = df['วันเวลา'].dt.date
         df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0)
         df['หมวดหมู่หลัก'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[0].strip())
         df['หมวดหมู่ย่อย'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[1].strip() if ":" in str(x) else "ทั่วไป")
         return df
-    return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "หมวดหมู่หลัก", "หมวดหมู่ย่อย"])
+    return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "หมวดหมู่หลัก", "หมวดหมู่ย่อย", "วันเวลา", "วันที่_date"])
 
 def load_quick_adds():
     records = qa_sheet.get_all_records()
@@ -132,7 +134,7 @@ sav_repay = df[df['ประเภท'] == 'คืนเงินกู้ออ
 total_sav_now = sav_dep + sav_repay - sav_withdrawn - sav_loan
 outstanding_loan = sav_loan - sav_repay
 
-# 🎨 ชุดสี Honey Pot
+# 🎨 ชุดสีระบบสตรีมมิ่งหุ้น (Honey Pot Financial Edition)
 HONEY_POT_MAP = {
     "รายรับ": "#2a9d8f",     
     "รายจ่าย": "#f9744b",    
@@ -155,7 +157,9 @@ if app_mode == "📱 Mobile Mode":
     if not qa_df.empty:
         for i, row in qa_df.iterrows():
             if st.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"mb_qa_{i}"):
-                sheet.append_row([str(datetime.date.today()), str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
+                # บันทึกด่วนแบบฝังแสตมป์เวลาปัจจุบันลงคลาวด์
+                now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
                 st.toast("Success! ✨")
                 st.cache_data.clear()
                 st.rerun()
@@ -194,7 +198,9 @@ if app_mode == "📱 Mobile Mode":
                 elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
             
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-            sheet.append_row([str(chosen_date), final_type, full_category, amount, note])
+            # รวมวันที่เข้ากับเวลาปัจจุบันก่อนเซฟลงระบบ
+            combined_datetime = datetime.datetime.combine(chosen_date, datetime.datetime.now().time())
+            sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
             st.cache_data.clear()
             st.rerun()
 
@@ -213,7 +219,8 @@ else:
                 for i, row in qa_df.iterrows():
                     col = cols[i % 4]
                     if col.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"dt_qa_{i}"):
-                        sheet.append_row([str(datetime.date.today()), str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
+                        now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
                         st.toast("Success! ✨")
                         st.cache_data.clear()
                         st.rerun()
@@ -257,15 +264,15 @@ else:
                         elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
                         
                     full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-                    sheet.append_row([str(chosen_date_dt), final_type, full_category, amount, note])
+                    combined_datetime = datetime.datetime.combine(chosen_date_dt, datetime.datetime.now().time())
+                    sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
                     st.cache_data.clear()
                     st.rerun()
 
-    # --- Tab 2: Dashboard (ปรับดีไซน์ให้อ่านง่ายและมินิมอลขึ้น) ---
+    # --- Tab 2: Dashboard ---
     with tab2:
         if not df.empty:
             df_chart = df.copy()
-            df_chart['วันที่'] = pd.to_datetime(df_chart['วันที่'])
             
             # --- กล่องสรุปตัวเลข (Metric Cards) ---
             inc = df_chart[df_chart['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
@@ -284,69 +291,90 @@ else:
             
             st.markdown("---")
             
-            # --- 📈 กราฟเส้นแบบสลับเปิดปิดข้อมูลได้ (Declutter Trend Analysis) ---
+            # --- 📈 ยกเครื่องปุ่มเปลี่ยน Timeframe ให้เป็นสไตล์แอปกระดานหุ้นลิ้งก์เรียลไทม์ ---
             col_trend_title, col_trend_filter = st.columns([1.5, 2])
             with col_trend_title:
-                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis</p>", unsafe_allow_html=True)
+                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis (Stock Style)</p>", unsafe_allow_html=True)
             with col_trend_filter:
-                # 🛠️ ปุ่มฟิลเตอร์ความถี่ และ ตัวเลือกคัดกรองเส้นกราฟเพื่อลดความลายตา
-                c_tf, c_ms = st.columns([1, 2])
-                time_frame = c_tf.selectbox("Timeframe:", ["รายวัน", "รายเดือน", "รายปี"], label_visibility="collapsed")
-                visible_metrics = c_ms.multiselect("เลือกเส้นกราฟที่ต้องการดู:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
+                c_tf, c_ms = st.columns([1.2, 2])
+                # อัปเกรดตัวเลือกไทม์เฟรมตามที่หมอต้องการเป๊ะๆ
+                time_frame = c_tf.selectbox("Timeframe:", ["รายวัน (1D)", "รายสัปดาห์ (1W)", "รายเดือน (1M)", "รายปี (1Y)", "ราย 5 ปี (5Y)"], label_visibility="collapsed")
+                visible_metrics = c_ms.multiselect("เลือกเส้นวิเคราะห์คงเหลือ:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
             
+            # จัดการจัดกลุ่มกลุ่มข้อมูลเวลาดิบให้สัมพันธ์กับแกน X สไตล์กระดานหุ้น
+            today = datetime.date.today()
             df_trend = df_chart.copy()
-            if time_frame == "รายปี": df_trend['เวลา'] = df_trend['วันที่'].dt.strftime('%Y')
-            elif time_frame == "รายเดือน": df_trend['เวลา'] = df_trend['วันที่'].dt.strftime('%Y-%m')
-            else: df_trend['เวลา'] = df_trend['วันที่'].dt.strftime('%Y-%m-%d')
-                
-            trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
-            pivot_trend = trend_data_raw.pivot(index='เวลา', columns='ประเภท', values='จำนวนเงิน').fillna(0)
+            df_trend = df_trend.sort_values(by='วันเวลา') # เรียงจากอดีตไปปัจจุบันเหมือนกราฟหุ้น
             
-            for col in ['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน', 'ถอนเงินออม', 'กู้เงินออม', 'คืนเงินกู้ออม']:
-                if col not in pivot_trend.columns: pivot_trend[col] = 0
-            
-            pivot_trend['รายรับ'] = pivot_trend['รายรับ']
-            pivot_trend['รายจ่าย'] = pivot_trend['รายจ่าย']
-            pivot_trend['เงินออม'] = pivot_trend['เงินออม'] + pivot_trend['คืนเงินกู้ออม'] - pivot_trend['ถอนเงินออม'] - pivot_trend['กู้เงินออม']
-            pivot_trend['เงินลงทุน'] = pivot_trend['เงินลงทุน']
-            pivot_trend['เงินสุทธิ'] = pivot_trend['รายรับ'] + pivot_trend['ถอนเงินออม'] + pivot_trend['กู้เงินออม'] - pivot_trend['รายจ่าย'] - pivot_trend['เงินออม'] - pivot_trend['เงินลงทุน'] - pivot_trend['คืนเงินกู้ออม']
-            
-            clean_trend_df = pivot_trend[['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน', 'เงินสุทธิ']].reset_index().melt(id_vars='เวลา', var_name='ประเภท', value_name='จำนวนเงิน')
-            
-            # กรองข้อมูลแสดงเฉพาะเส้นที่เลือกติ๊กในคลังมัลติซีเล็คต์
-            filtered_trend_df = clean_trend_df[clean_trend_df['ประเภท'].isin(visible_metrics)]
-            
-            if not filtered_trend_df.empty:
-                fig_trend = px.line(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
-                fig_trend.update_traces(line=dict(width=2.5), marker=dict(size=7, line=dict(width=1, color="white")))
-                fig_trend.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                    xaxis=dict(showgrid=False, title="", showline=False, tickfont=dict(family='Poppins', size=11)),
-                    yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="", zeroline=False, tickfont=dict(family='Poppins', size=11)),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title="", font=dict(family='Poppins', size=12)),
-                    hovermode="x unified", margin=dict(t=10, b=0, l=0, r=0)
-                )
-                st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
+            if "รายวัน" in time_frame:
+                # กรองดูเฉพาะวันนี้ และแยกแกน X เป็นชั่วโมง (00:00 - 24:00)
+                df_trend = df_trend[df_trend['วันที่_date'] == today]
+                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%H:00')
+            elif "รายสัปดาห์" in time_frame:
+                # ย้อนหลัง 7 วันล่าสุด แยกรายวัน
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=7))]
+                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%d %b')
+            elif "รายเดือน" in time_frame:
+                # ย้อนหลัง 30 วันล่าสุด แยกรายวัน
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=30))]
+                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%d %b')
+            elif "รายปี" in time_frame:
+                # ย้อนหลัง 1 ปี แยกรายเดือน
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365))]
+                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%Y-%m')
             else:
-                st.info("กรุณาเลือกเส้นกราฟอย่างน้อย 1 เส้นเพื่อแสดงผล")
+                # ย้อนหลัง 5 ปี แยกรายปี
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365*5))]
+                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%Y')
+                
+            if not df_trend.empty:
+                trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
+                pivot_trend = trend_data_raw.pivot(index='เวลา', columns='ประเภท', values='จำนวนเงิน').fillna(0)
+                
+                for col in ['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน', 'ถอนเงินออม', 'กู้เงินออม', 'คืนเงินกู้ออม']:
+                    if col not in pivot_trend.columns: pivot_trend[col] = 0
+                
+                pivot_trend['รายรับ'] = pivot_trend['รายรับ']
+                pivot_trend['รายจ่าย'] = pivot_trend['รายจ่าย']
+                pivot_trend['เงินออม'] = pivot_trend['เงินออม'] + pivot_trend['คืนเงินกู้ออม'] - pivot_trend['ถอนเงินออม'] - pivot_trend['กู้เงินออม']
+                pivot_trend['เงินลงทุน'] = pivot_trend['เงินลงทุน']
+                pivot_trend['เงินสุทธิ'] = pivot_trend['รายรับ'] + pivot_trend['ถอนเงินออม'] + pivot_trend['กู้เงินออม'] - pivot_trend['รายจ่าย'] - pivot_trend['เงินออม'] - pivot_trend['เงินลงทุน'] - pivot_trend['คืนเงินกู้ออม']
+                
+                clean_trend_df = pivot_trend[['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน', 'เงินสุทธิ']].reset_index().melt(id_vars='เวลา', var_name='ประเภท', value_name='จำนวนเงิน')
+                filtered_trend_df = clean_trend_df[clean_trend_df['ประเภท'].isin(visible_metrics)]
+                
+                if not filtered_trend_df.empty:
+                    # ปรับแต่งเส้นให้เรียวบาง (width=2) มีมาร์กเกอร์เล็กๆ สไตล์กราฟกระดานเทรด
+                    fig_trend = px.line(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
+                    fig_trend.update_traces(line=dict(width=2), marker=dict(size=5, line=dict(width=1, color="white")))
+                    
+                    # ลบเส้นตารางแนวตั้ง แกน X ปล่อยให้คลีนโล่งเพื่อความมินิมอลแบบกราฟหุ้นต่างประเทศ
+                    fig_trend.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+                        xaxis=dict(showgrid=False, title="", showline=False, tickfont=dict(family='Poppins', size=11)),
+                        yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="", zeroline=False, tickfont=dict(family='Poppins', size=11)),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title="", font=dict(family='Poppins', size=12)),
+                        hovermode="x unified", margin=dict(t=10, b=0, l=0, r=0)
+                    )
+                    st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
+                else:
+                    st.info("กรุณาเลือกเส้นกราฟอย่างน้อย 1 เส้นเพื่อแสดงผล")
+            else:
+                st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในช่วงไทม์เฟรมนี้")
             
             st.markdown("---")
             
-            # --- ⭕ Infographic สัดส่วนรายจ่าย (เพิ่มระบบ Interactive Deep-Dive กรองข้อมูลแบบล้อสีกัน) ---
+            # --- ⭕ Infographic สัดส่วนรายจ่าย ---
             expense_df = df_chart[df_chart['ประเภท'] == 'รายจ่าย']
-            
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
                 st.markdown("<p class='quick-add-text'>Expense Analysis</p>", unsafe_allow_html=True)
-            
             with col_exp_filter:
                 if not expense_df.empty:
-                    # 🛠️ ช่องฟิลเตอร์คัดกรองหมวดหลักเพื่อไปบีบกราฟแท่งขวาให้อ่านง่าย
                     all_main_cats = sorted(list(expense_df['หมวดหมู่หลัก'].unique()))
                     selected_main_filter = st.selectbox("🔎 เจาะลึกรายละเอียดหมวดหมู่ย่อยด้านขวา:", ["แสดงทั้งหมด"] + all_main_cats)
 
             col_chart1, col_chart2 = st.columns([1, 1.2])
-            
             if not expense_df.empty:
                 pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
                 unique_main_cats = pie_data['หมวดหมู่หลัก'].tolist()
@@ -359,13 +387,12 @@ else:
                     st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
                         
                 with col_chart2:
-                    # ฟิลเตอร์ข้อมูลกราฟแท่งย่อยตามการกดดรอปดาวน์ด้านบน
                     if selected_main_filter == "แสดงทั้งหมด":
                         sub_data = expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
-                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8) # โชว์ 8 รายการหลัก
+                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8)
                     else:
                         sub_data = expense_df[expense_df['หมวดหมู่หลัก'] == selected_main_filter].groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
-                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False) # โชว์รายการย่อยทั้งหมดในหมวดนั้นๆ
+                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False)
                     
                     fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h', color_discrete_map=cat_color_map) 
                     fig_bar.update_traces(marker_line_width=0, opacity=0.9, texttemplate='฿%{x:,.0f}', textposition='outside', textfont=dict(family='Poppins', size=11))
@@ -378,7 +405,6 @@ else:
                     st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
             else:
                 st.info("No expense data available.")
-
         else:
             st.info("No data available.")
 
@@ -391,7 +417,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v11")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v12")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -400,7 +426,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v11")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v12")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -411,7 +437,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v11")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v12")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
