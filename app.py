@@ -7,6 +7,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 
+
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
@@ -451,3 +452,105 @@ else:
                 sheet.update(range_name="A1", values=[edited_df.columns.values.tolist()] + edited_df.values.tolist())
                 st.success("Data updated!")
                 st.rerun()
+
+# (สมมติว่านำไปต่อท้ายโค้ดเดิม หรือสร้างไฟล์ใหม่ทดสอบ)
+
+st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🏦 เครื่องจำลองสินเชื่อแบบธนาคาร (EMI)</p>", unsafe_allow_html=True)
+
+# --- 1. ส่วนกรอกข้อมูลสินเชื่อ ---
+col1, col2, col3 = st.columns(3)
+with col1:
+    principal = st.number_input("เงินที่ต้องการกู้ (บาท)", min_value=1000.0, value=10000.0, step=1000.0)
+with col2:
+    annual_rate = st.number_input("ดอกเบี้ยต่อปี (%)", min_value=0.1, value=15.0, step=0.1)
+with col3:
+    tenure_months = st.number_input("ระยะเวลาผ่อน (เดือน)", min_value=1, value=12, step=1)
+
+# --- 2. ฟังก์ชันคำนวณคณิตศาสตร์การเงิน (EMI) ---
+def calculate_emi_schedule(P, annual_r, n):
+    r = (annual_r / 100) / 12  # แปลงดอกเบี้ยต่อปี เป็นต่อเดือน
+    # สูตร EMI
+    emi = P * (r * (1 + r)**n) / ((1 + r)**n - 1)
+    
+    schedule = []
+    balance = P
+    for month in range(1, int(n) + 1):
+        interest_payment = balance * r
+        principal_payment = emi - interest_payment
+        balance -= principal_payment
+        schedule.append({
+            "งวดที่": month,
+            "ยอดชำระ (EMI)": emi,
+            "ตัดเงินต้น": principal_payment,
+            "จ่ายดอกเบี้ย": interest_payment,
+            "เงินต้นคงเหลือ": max(0, balance)
+        })
+    return emi, pd.DataFrame(schedule)
+
+emi_amount, df_schedule = calculate_emi_schedule(principal, annual_rate, tenure_months)
+
+# คำนวณดอกเบี้ยรวมทั้งหมด
+total_interest = df_schedule['จ่ายดอกเบี้ย'].sum()
+total_payment = principal + total_interest
+
+st.markdown("---")
+
+# --- 3. แดชบอร์ดสรุปยอด ---
+m1, m2, m3, m4 = st.columns(4)
+m1.markdown(f"<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน (EMI)</div><div class='metric-value' style='color:#f9744b;'>฿{emi_amount:,.2f}</div></div>", unsafe_allow_html=True)
+m2.markdown(f"<div class='metric-card'><div class='metric-title'>เงินต้นทั้งหมด</div><div class='metric-value'>฿{principal:,.0f}</div></div>", unsafe_allow_html=True)
+m3.markdown(f"<div class='metric-card'><div class='metric-title'>ดอกเบี้ยรวมทั้งสัญญา</div><div class='metric-value' style='color:#e9c46a;'>฿{total_interest:,.2f}</div></div>", unsafe_allow_html=True)
+m4.markdown(f"<div class='metric-card'><div class='metric-title'>รวมต้องจ่ายคืนทั้งสิ้น</div><div class='metric-value' style='color:#f9744b;'>฿{total_payment:,.2f}</div></div>", unsafe_allow_html=True)
+
+# --- 4. ระบบจำลองการจ่ายเงิน (Interactive Tracker) ---
+st.markdown("<p class='quick-add-text'>🔄 จำลองการจ่ายค่างวด (Payment Tracker)</p>", unsafe_allow_html=True)
+
+# ใช้ session_state เพื่อจำว่าจ่ายไปแล้วกี่งวด
+if 'months_paid' not in st.session_state:
+    st.session_state.months_paid = 0
+
+# ป้องกันไม่ให้งวดที่จ่ายเกินจำนวนเดือนทั้งหมด
+if st.session_state.months_paid > tenure_months:
+    st.session_state.months_paid = tenure_months
+
+col_pay, col_reset = st.columns([1, 4])
+with col_pay:
+    if st.button("💸 จ่ายบิลเดือนนี้", use_container_width=True):
+        if st.session_state.months_paid < tenure_months:
+            st.session_state.months_paid += 1
+            st.rerun()
+with col_reset:
+    if st.button("🔄 รีเซ็ตการจ่าย", use_container_width=False):
+        st.session_state.months_paid = 0
+        st.rerun()
+
+# --- 5. แสดงความคืบหน้า (Progress) ---
+current_month = st.session_state.months_paid
+progress_pct = current_month / tenure_months
+
+st.progress(progress_pct)
+st.caption(f"จ่ายแล้ว {current_month} งวด จากทั้งหมด {tenure_months} งวด ({progress_pct*100:.0f}%)")
+
+if current_month == tenure_months:
+    st.success("🎉 ยินดีด้วยครับ! หมอผ่อนสินเชื่อก้อนนี้หมดแล้ว ปลอดหนี้เรียบร้อย!")
+elif current_month > 0:
+    remaining_balance = df_schedule.iloc[current_month - 1]['เงินต้นคงเหลือ']
+    st.info(f"งวดล่าสุดตัดเงินต้นไปแล้ว ยอดหนี้คงเหลือปัจจุบันคือ **฿{remaining_balance:,.2f}**")
+
+st.markdown("---")
+
+# --- 6. ตารางแสดงการลดต้นลดดอก (Amortization Schedule) ---
+st.markdown("<p class='quick-add-text'>📋 ตารางแจกแจงการผ่อนชำระ (Amortization Schedule)</p>", unsafe_allow_html=True)
+
+# ปรับแต่งตารางให้ดูง่ายขึ้น
+df_display = df_schedule.copy()
+for col in ['ยอดชำระ (EMI)', 'ตัดเงินต้น', 'จ่ายดอกเบี้ย', 'เงินต้นคงเหลือ']:
+    df_display[col] = df_display[col].apply(lambda x: f"฿ {x:,.2f}")
+
+# ไฮไลต์แถวที่จ่ายไปแล้ว
+def highlight_paid(row):
+    if row.name < current_month:
+        return ['background-color: rgba(42, 157, 143, 0.1); color: #2a9d8f; font-weight: bold'] * len(row)
+    return [''] * len(row)
+
+st.dataframe(df_display.style.apply(highlight_paid, axis=1), use_container_width=True, hide_index=True)
