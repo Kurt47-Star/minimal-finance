@@ -206,7 +206,6 @@ if app_mode == "📱 Mobile Mode":
     chosen_date = datetime.datetime.now(TZ_TH).date() if date_shortcut == "วันนี้" else ((datetime.datetime.now(TZ_TH) - datetime.timedelta(days=1)).date() if date_shortcut == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.datetime.now(TZ_TH).date()))
 
     with st.form("mobile_form", clear_on_submit=True):
-        # 💡 เปลี่ยน value=None เพื่อให้ช่องกรอกเงินว่างเปล่าแต่แรก จิ้มแล้วพิมพ์ได้เลย
         amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
         note = st.text_input("Note", placeholder="Optional...")
         if st.form_submit_button("Save Transaction", use_container_width=True) and amount is not None and amount > 0:
@@ -272,7 +271,6 @@ else:
                 chosen_date_dt = datetime.datetime.now(TZ_TH).date() if date_shortcut_dt == "วันนี้" else ((datetime.datetime.now(TZ_TH) - datetime.timedelta(days=1)).date() if date_shortcut_dt == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.datetime.now(TZ_TH).date(), key="dt_date_picker"))
 
             with st.form("desktop_form", clear_on_submit=True):
-                # 💡 เปลี่ยน value=None เช่นกันสำหรับฝั่งคอมพิวเตอร์
                 amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
                 note = st.text_input("Note", placeholder="...")
                 if st.form_submit_button("Save Transaction", use_container_width=True) and amount is not None and amount > 0:
@@ -471,7 +469,6 @@ else:
         
         with st.expander("🛠️ เปิดสัญญา / ปรับปรุงยอดเงินกู้ใหม่"):
             with st.form("loan_setup_form"):
-                # 💡 เปลี่ยนช่องกรอกให้เป็นค่าว่าง (None) เช่นกัน ถ้าไม่กรอกให้ดึงของเดิมมาใช้
                 inp_principal = st.number_input("วงเงินกู้ที่ต้องการ (บาท)", min_value=1000.0, value=None, placeholder=f"ปัจจุบัน: ฿{db_principal:,.0f}", step=1000.0)
                 inp_rate = st.number_input("อัตราดอกเบี้ยต่อปี (%)", min_value=0.1, value=None, placeholder=f"ปัจจุบัน: {db_rate}%", step=0.1)
                 inp_months = st.number_input("ระยะเวลาสัญญาผ่อน (เดือน)", min_value=1, value=None, placeholder=f"ปัจจุบัน: {db_months} เดือน", step=1)
@@ -518,4 +515,45 @@ else:
 
         st.markdown("<p class='quick-add-text'>🔄 ชำระค่างวดประจำเดือน</p>", unsafe_allow_html=True)
 
-        current_
+        current_real_month = datetime.datetime.now(TZ_TH).strftime("%Y-%m")
+        is_paid_this_month = (db_last_paid_month == current_real_month)
+
+        col_pay, col_info_lock = st.columns([1.5, 3.5])
+        
+        with col_pay:
+            if current_month_paid >= db_months:
+                st.button("🎉 ผ่อนชำระครบสัญญาแล้ว", disabled=True, use_container_width=True)
+            elif is_paid_this_month:
+                st.button("🔒 ล็อก! จ่ายงวดของเดือนนี้แล้ว", disabled=True, use_container_width=True)
+            else:
+                if st.button("💸 เช็คบิลจ่ายงวดประจำเดือนนี้", use_container_width=True):
+                    next_paid_count = current_month_paid + 1
+                    loan_sheet.update_cell(2, 4, next_paid_count)
+                    loan_sheet.update_cell(2, 5, current_real_month)
+                    st.toast(f"ชำระงวดที่ {next_paid_count} สำเร็จ! ข้อมูลซิงค์ขึ้นคลาวด์แล้ว ✨")
+                    st.rerun()
+                    
+        with col_info_lock:
+            if is_paid_this_month and current_month_paid < db_months:
+                st.info(f"ระบบตรวจพบสถานะความปลอดภัย: งวดที่ {current_month_paid} ถูกตัดบัญชีไปเมื่อเดือน {db_last_paid_month} เรียบร้อยแล้ว ปุ่มชำระเงินจะเปิดให้กดใหม่อัตโนมัติเมื่อขึ้นเดือนถัดไปครับ")
+            elif current_month_paid >= db_months:
+                st.success("สัญญาเงินกู้ฉบับนี้เสร็จสิ้นอย่างสมบูรณ์แบบเรียบร้อยแล้ว!")
+
+        progress_pct = current_month_paid / db_months if db_months > 0 else 0
+        st.progress(progress_pct)
+        st.caption(f"ชำระไปแล้ว {current_month_paid} งวด จากทั้งหมด {db_months} งวด ({progress_pct*100:.1f}%)")
+
+        st.markdown("---")
+        st.markdown("<p class='quick-add-text'>📋 ตารางแจกแจงการผ่อนชำระคลาวด์ (Amortization Schedule)</p>", unsafe_allow_html=True)
+
+        if not df_schedule.empty:
+            df_display = df_schedule.copy()
+            for col in ['ยอดชำระ (EMI)', 'ตัดเงินต้น', 'จ่ายดอกเบี้ย', 'เงินต้นคงเหลือ']:
+                df_display[col] = df_display[col].apply(lambda x: f"฿ {x:,.2f}")
+
+            def highlight_paid(row):
+                if row.name < current_month_paid:
+                    return ['background-color: rgba(42, 157, 143, 0.1); color: #2a9d8f; font-weight: bold'] * len(row)
+                return [''] * len(row)
+
+            st.dataframe(df_display.style.apply(highlight_paid, axis=1), use_container_width=True, hide_index=True)
