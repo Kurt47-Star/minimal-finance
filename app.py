@@ -95,7 +95,6 @@ def load_data():
     records = sheet.get_all_records()
     if records:
         df = pd.DataFrame(records)
-        # รองรับทั้งแบบ วันที่อย่างเดียว และ วันที่พร้อมเวลา (Datetime)
         df['วันเวลา'] = pd.to_datetime(df['วันที่'], errors='coerce')
         df['วันที่_date'] = df['วันเวลา'].dt.date
         df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0)
@@ -125,7 +124,6 @@ df = load_data()
 qa_df = load_quick_adds()
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# คำนวณยอดเงินออมหลักและหนี้กู้เงินออมแบบ Real-time
 sav_dep = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_withdrawn = df[df['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_loan = df[df['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
@@ -134,7 +132,6 @@ sav_repay = df[df['ประเภท'] == 'คืนเงินกู้ออ
 total_sav_now = sav_dep + sav_repay - sav_withdrawn - sav_loan
 outstanding_loan = sav_loan - sav_repay
 
-# 🎨 ชุดสีระบบสตรีมมิ่งหุ้น (Honey Pot Financial Edition)
 HONEY_POT_MAP = {
     "รายรับ": "#2a9d8f",     
     "รายจ่าย": "#f9744b",    
@@ -157,7 +154,6 @@ if app_mode == "📱 Mobile Mode":
     if not qa_df.empty:
         for i, row in qa_df.iterrows():
             if st.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"mb_qa_{i}"):
-                # บันทึกด่วนแบบฝังแสตมป์เวลาปัจจุบันลงคลาวด์
                 now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
                 st.toast("Success! ✨")
@@ -198,7 +194,6 @@ if app_mode == "📱 Mobile Mode":
                 elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
             
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-            # รวมวันที่เข้ากับเวลาปัจจุบันก่อนเซฟลงระบบ
             combined_datetime = datetime.datetime.combine(chosen_date, datetime.datetime.now().time())
             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
             st.cache_data.clear()
@@ -291,41 +286,40 @@ else:
             
             st.markdown("---")
             
-            # --- 📈 ยกเครื่องปุ่มเปลี่ยน Timeframe ให้เป็นสไตล์แอปกระดานหุ้นลิ้งก์เรียลไทม์ ---
+            # --- 📈 ระบบกราฟแนวโน้ม (แก้อัลกอริทึมเวลาเป็น Datetime 100%) ---
             col_trend_title, col_trend_filter = st.columns([1.5, 2])
             with col_trend_title:
                 st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis (Stock Style)</p>", unsafe_allow_html=True)
             with col_trend_filter:
                 c_tf, c_ms = st.columns([1.2, 2])
-                # อัปเกรดตัวเลือกไทม์เฟรมตามที่หมอต้องการเป๊ะๆ
                 time_frame = c_tf.selectbox("Timeframe:", ["รายวัน (1D)", "รายสัปดาห์ (1W)", "รายเดือน (1M)", "รายปี (1Y)", "ราย 5 ปี (5Y)"], label_visibility="collapsed")
                 visible_metrics = c_ms.multiselect("เลือกเส้นวิเคราะห์คงเหลือ:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
             
-            # จัดการจัดกลุ่มกลุ่มข้อมูลเวลาดิบให้สัมพันธ์กับแกน X สไตล์กระดานหุ้น
             today = datetime.date.today()
             df_trend = df_chart.copy()
-            df_trend = df_trend.sort_values(by='วันเวลา') # เรียงจากอดีตไปปัจจุบันเหมือนกราฟหุ้น
+            df_trend = df_trend.sort_values(by='วันเวลา')
             
+            # 🔥 บั๊กแกนเวลาถูกแก้ไขตรงนี้: เก็บข้อมูลเป็น Datetime แทน String แล้วตั้งค่า Format การแสดงผล
             if "รายวัน" in time_frame:
-                # กรองดูเฉพาะวันนี้ และแยกแกน X เป็นชั่วโมง (00:00 - 24:00)
                 df_trend = df_trend[df_trend['วันที่_date'] == today]
-                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%H:00')
+                df_trend['เวลา'] = pd.to_datetime(df_trend['วันเวลา'].dt.strftime('%Y-%m-%d %H:00:00')) 
+                x_tick_format = "%H:%M"
             elif "รายสัปดาห์" in time_frame:
-                # ย้อนหลัง 7 วันล่าสุด แยกรายวัน
                 df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=7))]
-                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%d %b')
+                df_trend['เวลา'] = pd.to_datetime(df_trend['วันที่_date']) 
+                x_tick_format = "%d %b"
             elif "รายเดือน" in time_frame:
-                # ย้อนหลัง 30 วันล่าสุด แยกรายวัน
                 df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=30))]
-                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%d %b')
+                df_trend['เวลา'] = pd.to_datetime(df_trend['วันที่_date']) 
+                x_tick_format = "%d %b"
             elif "รายปี" in time_frame:
-                # ย้อนหลัง 1 ปี แยกรายเดือน
                 df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365))]
-                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%Y-%m')
+                df_trend['เวลา'] = pd.to_datetime(df_trend['วันเวลา'].dt.strftime('%Y-%m-01')) 
+                x_tick_format = "%b %Y"
             else:
-                # ย้อนหลัง 5 ปี แยกรายปี
                 df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365*5))]
-                df_trend['เวลา'] = df_trend['วันเวลา'].dt.strftime('%Y')
+                df_trend['เวลา'] = pd.to_datetime(df_trend['วันเวลา'].dt.strftime('%Y-01-01'))
+                x_tick_format = "%Y"
                 
             if not df_trend.empty:
                 trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
@@ -344,14 +338,12 @@ else:
                 filtered_trend_df = clean_trend_df[clean_trend_df['ประเภท'].isin(visible_metrics)]
                 
                 if not filtered_trend_df.empty:
-                    # ปรับแต่งเส้นให้เรียวบาง (width=2) มีมาร์กเกอร์เล็กๆ สไตล์กราฟกระดานเทรด
                     fig_trend = px.line(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
-                    fig_trend.update_traces(line=dict(width=2), marker=dict(size=5, line=dict(width=1, color="white")))
+                    fig_trend.update_traces(line=dict(width=2.5), marker=dict(size=7, line=dict(width=1, color="white")))
                     
-                    # ลบเส้นตารางแนวตั้ง แกน X ปล่อยให้คลีนโล่งเพื่อความมินิมอลแบบกราฟหุ้นต่างประเทศ
                     fig_trend.update_layout(
                         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                        xaxis=dict(showgrid=False, title="", showline=False, tickfont=dict(family='Poppins', size=11)),
+                        xaxis=dict(showgrid=False, title="", showline=False, tickformat=x_tick_format, tickfont=dict(family='Poppins', size=11)),
                         yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="", zeroline=False, tickfont=dict(family='Poppins', size=11)),
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title="", font=dict(family='Poppins', size=12)),
                         hovermode="x unified", margin=dict(t=10, b=0, l=0, r=0)
