@@ -40,7 +40,7 @@ st.markdown("""
     
     .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text-color); opacity: 0.9; }
     
-    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) ที่ปรับตัวตามโหมดมืดสว่าง */
+    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) */
     .metric-card { 
         background-color: var(--secondary-background-color); 
         padding: 24px; 
@@ -61,7 +61,7 @@ st.markdown("""
 
 st.title("Minimal Finance Pro")
 
-# 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย (Asia/Bangkok) เสมอ แม้รันบนเซิร์ฟเวอร์นอก
+# 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 
 # --- ระบบเชื่อมต่อคลาวด์ ---
@@ -79,7 +79,6 @@ try:
     sheet = client.open(spreadsheet_name).sheet1
 except Exception as e:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
-    st.info("💡 อย่าลืมนำอีเมล Service Account ไปกดแชร์และเปิดสิทธิ์ Editor ในไฟล์ Google Sheets นะครับหมอ")
     st.stop()
 
 try:
@@ -94,14 +93,19 @@ except gspread.exceptions.WorksheetNotFound:
     cat_sheet = client.open(spreadsheet_name).add_worksheet(title="Categories", rows="100", cols="3")
     cat_sheet.append_row(["ประเภท", "หมวดหมู่หลัก", "หมวดหมู่ย่อย"])
 
+try:
+    loan_sheet = client.open(spreadsheet_name).worksheet("Loans")
+except gspread.exceptions.WorksheetNotFound:
+    loan_sheet = client.open(spreadsheet_name).add_worksheet(title="Loans", rows="10", cols="5")
+    loan_sheet.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
+    loan_sheet.append_row([10000.0, 15.0, 12, 0, ""])
+
 # --- ฟังก์ชันโหลดข้อมูล ---
 def load_data():
     records = sheet.get_all_records()
     if records:
         df = pd.DataFrame(records)
         parsed_time = pd.to_datetime(df['วันที่'], format='mixed', errors='coerce')
-        
-        # ปรับแก้ปี พ.ศ. ให้เป็น ค.ศ. อัตโนมัติหากตรวจพบ
         df['วันเวลา'] = parsed_time.apply(lambda x: x.replace(year=x.year - 543) if pd.notnull(x) and x.year > 2400 else x)
         df['วันที่_date'] = df['วันเวลา'].dt.date
         df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0)
@@ -130,6 +134,17 @@ def load_categories():
 df = load_data()
 qa_df = load_quick_adds()
 cat_raw_df, SUB_CATEGORIES = load_categories()
+
+loan_records = loan_sheet.get_all_records()
+if loan_records:
+    loan_info = loan_records[0]
+    db_principal = float(loan_info["เงินต้น"])
+    db_rate = float(loan_info["อัตราดอกเบี้ยปี"])
+    db_months = int(loan_info["ระยะเวลาเดือน"])
+    current_month_paid = int(loan_info["งวดที่จ่ายแล้ว"])
+    db_last_paid_month = str(loan_info["เดือนปีที่จ่ายล่าสุด"]).strip()
+else:
+    db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
 sav_dep = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_withdrawn = df[df['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
@@ -191,9 +206,10 @@ if app_mode == "📱 Mobile Mode":
     chosen_date = datetime.datetime.now(TZ_TH).date() if date_shortcut == "วันนี้" else ((datetime.datetime.now(TZ_TH) - datetime.timedelta(days=1)).date() if date_shortcut == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.datetime.now(TZ_TH).date()))
 
     with st.form("mobile_form", clear_on_submit=True):
-        amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f")
+        # 💡 เปลี่ยน value=None เพื่อให้ช่องกรอกเงินว่างเปล่าแต่แรก จิ้มแล้วพิมพ์ได้เลย
+        amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
         note = st.text_input("Note", placeholder="Optional...")
-        if st.form_submit_button("Save Transaction", use_container_width=True) and amount > 0:
+        if st.form_submit_button("Save Transaction", use_container_width=True) and amount is not None and amount > 0:
             final_type = type_entry.split(" ")[1]
             if final_type == "เงินออม":
                 if "เบิกออกมาใช้" in sav_action: final_type = "ถอนเงินออม"
@@ -210,7 +226,6 @@ if app_mode == "📱 Mobile Mode":
 # 💻 โหมดคอมพิวเตอร์ (Desktop Mode)
 # ==========================================
 else:
-    # 📌 จัด EMI เข้าไปเป็น Tab ที่ 5 ให้สวยงาม
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["✨ Transaction", "📊 Dashboard", "🎯 Goals", "⚙️ Settings", "🏦 Loan Simulator"])
 
     with tab1:
@@ -257,9 +272,10 @@ else:
                 chosen_date_dt = datetime.datetime.now(TZ_TH).date() if date_shortcut_dt == "วันนี้" else ((datetime.datetime.now(TZ_TH) - datetime.timedelta(days=1)).date() if date_shortcut_dt == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.datetime.now(TZ_TH).date(), key="dt_date_picker"))
 
             with st.form("desktop_form", clear_on_submit=True):
-                amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f")
+                # 💡 เปลี่ยน value=None เช่นกันสำหรับฝั่งคอมพิวเตอร์
+                amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
                 note = st.text_input("Note", placeholder="...")
-                if st.form_submit_button("Save Transaction", use_container_width=True) and amount > 0:
+                if st.form_submit_button("Save Transaction", use_container_width=True) and amount is not None and amount > 0:
                     final_type = type_entry.split(" ")[1]
                     if final_type == "เงินออม":
                         if "เบิกออกมาใช้" in sav_action: final_type = "ถอนเงินออม"
@@ -314,7 +330,6 @@ else:
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
             elif "รายเดือน" in time_frame:
-                # 🛠️ แก้ไขบั๊กตัวอักษรต่างดาวเรียบร้อยเป็น 'วันที่_date'
                 df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=30))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
@@ -422,7 +437,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v13")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v14")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -431,7 +446,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v13")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v14")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -442,7 +457,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v13")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v14")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
@@ -451,18 +466,32 @@ else:
                 st.rerun()
 
     with tab5:
-        st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🏦 เครื่องจำลองสินเชื่อแบบธนาคาร (EMI)</p>", unsafe_allow_html=True)
+        st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🏦 เครื่องจำลองสินเชื่อระบบคลาวด์ถาวร (EMI Lock)</p>", unsafe_allow_html=True)
+        st.caption("💡 ข้อมูลในหน้านี้จะบันทึกเข้า Google Sheets อัตโนมัติ ไม่หายเมื่อกดรีเฟรชเว็บ")
         
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            principal = st.number_input("เงินที่ต้องการกู้ (บาท)", min_value=1000.0, value=10000.0, step=1000.0)
-        with col2:
-            annual_rate = st.number_input("ดอกเบี้ยต่อปี (%)", min_value=0.1, value=15.0, step=0.1)
-        with col3:
-            tenure_months = st.number_input("ระยะเวลาผ่อน (เดือน)", min_value=1, value=12, step=1)
+        with st.expander("🛠️ เปิดสัญญา / ปรับปรุงยอดเงินกู้ใหม่"):
+            with st.form("loan_setup_form"):
+                # 💡 เปลี่ยนช่องกรอกให้เป็นค่าว่าง (None) เช่นกัน ถ้าไม่กรอกให้ดึงของเดิมมาใช้
+                inp_principal = st.number_input("วงเงินกู้ที่ต้องการ (บาท)", min_value=1000.0, value=None, placeholder=f"ปัจจุบัน: ฿{db_principal:,.0f}", step=1000.0)
+                inp_rate = st.number_input("อัตราดอกเบี้ยต่อปี (%)", min_value=0.1, value=None, placeholder=f"ปัจจุบัน: {db_rate}%", step=0.1)
+                inp_months = st.number_input("ระยะเวลาสัญญาผ่อน (เดือน)", min_value=1, value=None, placeholder=f"ปัจจุบัน: {db_months} เดือน", step=1)
+                
+                if st.form_submit_button("💾 อัปเดตสัญญาเงินกู้ลงคลาวด์"):
+                    new_p = inp_principal if inp_principal is not None else db_principal
+                    new_r = inp_rate if inp_rate is not None else db_rate
+                    new_m = inp_months if inp_months is not None else db_months
+                    
+                    loan_sheet.update_cell(2, 1, new_p)
+                    loan_sheet.update_cell(2, 2, new_r)
+                    loan_sheet.update_cell(2, 3, new_m)
+                    loan_sheet.update_cell(2, 4, 0)
+                    loan_sheet.update_cell(2, 5, "")
+                    st.success("เปิดสัญญาเงินกู้ฉบับใหม่เรียบร้อยครับ!")
+                    st.rerun()
 
         def calculate_emi_schedule(P, annual_r, n):
             r = (annual_r / 100) / 12  
+            if r == 0: return P/n, pd.DataFrame()
             emi = P * (r * (1 + r)**n) / ((1 + r)**n - 1)
             schedule = []
             balance = P
@@ -475,59 +504,18 @@ else:
                 })
             return emi, pd.DataFrame(schedule)
 
-        emi_amount, df_schedule = calculate_emi_schedule(principal, annual_rate, tenure_months)
-        total_interest = df_schedule['จ่ายดอกเบี้ย'].sum()
-        total_payment = principal + total_interest
+        emi_amount, df_schedule = calculate_emi_schedule(db_principal, db_rate, db_months)
+        total_interest = df_schedule['จ่ายดอกเบี้ย'].sum() if not df_schedule.empty else 0
+        total_payment = db_principal + total_interest
 
         st.markdown("---")
 
         m1, m2, m3, m4 = st.columns(4)
         m1.markdown(f"<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน (EMI)</div><div class='metric-value' style='color:#f9744b;'>฿{emi_amount:,.2f}</div></div>", unsafe_allow_html=True)
-        m2.markdown(f"<div class='metric-card'><div class='metric-title'>เงินต้นทั้งหมด</div><div class='metric-value'>฿{principal:,.0f}</div></div>", unsafe_allow_html=True)
-        m3.markdown(f"<div class='metric-card'><div class='metric-title'>ดอกเบี้ยรวมทั้งสัญญา</div><div class='metric-value' style='color:#e9c46a;'>฿{total_interest:,.2f}</div></div>", unsafe_allow_html=True)
-        m4.markdown(f"<div class='metric-card'><div class='metric-title'>รวมต้องจ่ายคืนทั้งสิ้น</div><div class='metric-value' style='color:#f9744b;'>฿{total_payment:,.2f}</div></div>", unsafe_allow_html=True)
+        m2.markdown(f"<div class='metric-card'><div class='metric-title'>เงินต้นคงค้างระบบ</div><div class='metric-value'>฿{db_principal:,.0f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='metric-card'><div class='metric-title'>ดอกเบี้ยทั้งสัญญา</div><div class='metric-value' style='color:#e9c46a;'>฿{total_interest:,.2f}</div></div>", unsafe_allow_html=True)
+        m4.markdown(f"<div class='metric-card'><div class='metric-title'>รวมชำระตลอดสัญญา</div><div class='metric-value' style='color:#f9744b;'>฿{total_payment:,.2f}</div></div>", unsafe_allow_html=True)
 
-        st.markdown("<p class='quick-add-text'>🔄 จำลองการจ่ายค่างวด (Payment Tracker)</p>", unsafe_allow_html=True)
+        st.markdown("<p class='quick-add-text'>🔄 ชำระค่างวดประจำเดือน</p>", unsafe_allow_html=True)
 
-        if 'months_paid' not in st.session_state:
-            st.session_state.months_paid = 0
-
-        if st.session_state.months_paid > tenure_months:
-            st.session_state.months_paid = tenure_months
-
-        col_pay, col_reset = st.columns([1, 4])
-        with col_pay:
-            if st.button("💸 จ่ายบิลเดือนนี้", use_container_width=True):
-                if st.session_state.months_paid < tenure_months:
-                    st.session_state.months_paid += 1
-                    st.rerun()
-        with col_reset:
-            if st.button("🔄 รีเซ็ตการจ่าย", use_container_width=False):
-                st.session_state.months_paid = 0
-                st.rerun()
-
-        current_month = st.session_state.months_paid
-        progress_pct = current_month / tenure_months
-
-        st.progress(progress_pct)
-        st.caption(f"จ่ายแล้ว {current_month} งวด จากทั้งหมด {tenure_months} งวด ({progress_pct*100:.1f}%)")
-
-        if current_month == tenure_months:
-            st.success("🎉 ยินดีด้วยครับ! หมอผ่อนสินเชื่อก้อนนี้หมดแล้ว ปลอดหนี้เรียบร้อย!")
-        elif current_month > 0:
-            remaining_balance = df_schedule.iloc[current_month - 1]['เงินต้นคงเหลือ']
-            st.info(f"งวดล่าสุดตัดเงินต้นไปแล้ว ยอดหนี้คงเหลือปัจจุบันคือ **฿{remaining_balance:,.2f}**")
-
-        st.markdown("---")
-        st.markdown("<p class='quick-add-text'>📋 ตารางแจกแจงการผ่อนชำระ (Amortization Schedule)</p>", unsafe_allow_html=True)
-
-        df_display = df_schedule.copy()
-        for col in ['ยอดชำระ (EMI)', 'ตัดเงินต้น', 'จ่ายดอกเบี้ย', 'เงินต้นคงเหลือ']:
-            df_display[col] = df_display[col].apply(lambda x: f"฿ {x:,.2f}")
-
-        def highlight_paid(row):
-            if row.name < current_month:
-                return ['background-color: rgba(42, 157, 143, 0.1); color: #2a9d8f; font-weight: bold'] * len(row)
-            return [''] * len(row)
-
-        st.dataframe(df_display.style.apply(highlight_paid, axis=1), use_container_width=True, hide_index=True)
+        current_
