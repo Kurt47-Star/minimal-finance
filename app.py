@@ -10,7 +10,7 @@ import json
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
-# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode
+# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode อัตโนมัติ
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap');
@@ -21,6 +21,7 @@ st.markdown("""
     
     h1, h2, h3 { font-weight: 700; color: var(--text-color); }
     
+    /* แต่งปุ่มสไตล์คลีน */
     .stButton>button { 
         border-radius: 12px; 
         font-weight: 500; 
@@ -39,6 +40,7 @@ st.markdown("""
     
     .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text-color); opacity: 0.9; }
     
+    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) */
     .metric-card { 
         background-color: var(--secondary-background-color); 
         padding: 24px; 
@@ -52,16 +54,17 @@ st.markdown("""
     .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
     .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
+    /* ซ่อนลูกศรในช่องกรอกตัวเลข */
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("Minimal Finance Pro")
 
-# 🌍 บังคับโซนเวลาแอป
+# 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 
-# --- ระบบเชื่อมต่อคลาวด์ (เชื่อมต่อแค่ครั้งเดียว) ---
+# --- ระบบเชื่อมต่อคลาวด์ ---
 @st.cache_resource
 def init_connection():
     creds_dict = json.loads(st.secrets["google_credentials"])
@@ -72,7 +75,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache ป้องกัน API Error (Rate Limit) ดึง Worksheet เก็บไว้ในความจำ
+# 🚀 ระบบ Smart Cache ป้องกัน API Error
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -107,7 +110,6 @@ sheet, qa_sheet, cat_sheet, loan_sheet = get_google_sheets()
 
 if sheet is None:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
-    st.info("💡 กรุณาตรวจสอบอีเมล Service Account ว่าได้เปิดสิทธิ์ Editor ในไฟล์ Google Sheets แล้วหรือยังครับ")
     st.stop()
 
 # --- ฟังก์ชันโหลดข้อมูลแยก Cache ---
@@ -169,6 +171,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
+# คำนวณสรุปยอดบัญชีตามหลักคณิตศาสตร์ Ledger
 sav_dep = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_withdrawn = df[df['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_loan = df[df['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
@@ -201,7 +204,7 @@ if app_mode == "📱 Mobile Mode":
             if st.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"mb_qa_{i}"):
                 now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
                 sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
-                fetch_main_data.clear() # เคลียร์เฉพาะ Cache ข้อมูลหลัก
+                fetch_main_data.clear()
                 st.toast("Success! ✨")
                 st.rerun()
                 
@@ -241,7 +244,7 @@ if app_mode == "📱 Mobile Mode":
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
             combined_datetime = datetime.datetime.combine(chosen_date, datetime.datetime.now(TZ_TH).time())
             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
-            fetch_main_data.clear() # เคลียร์เฉพาะ Cache ข้อมูลหลัก
+            fetch_main_data.clear()
             st.rerun()
 
 # ==========================================
@@ -317,6 +320,8 @@ else:
             inc = df_chart[df_chart['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_chart[df_chart['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_chart[df_chart['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
+            
+            # สมการคลังสากล: หักลบรายจ่ายและปรับทิศทางเงินกู้/เงินออมเรียบร้อย
             net = inc + sav_withdrawn + sav_loan - exp - sav_dep - sav_repay
 
             m1, m2, m3, m4, m5 = st.columns(5)
@@ -351,15 +356,15 @@ else:
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
             elif "รายเดือน" in time_frame:
-                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=30))]
+                df_trend = df_trend[df_trend['淺ที่_date' if '淺ที่_date' in df_trend else 'วันที่_date'] >= (today - datetime.timedelta(days=30))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
             elif "รายปี" in time_frame:
-                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365))]
+                df_trend = df_trend[df_trend['淺ที่_date' if '淺ที่_date' in df_trend else 'วันที่_date'] >= (today - datetime.timedelta(days=365))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.to_period('M').dt.to_timestamp()
                 x_tick_format = "%b %Y"
             else:
-                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365*5))]
+                df_trend = df_trend[df_trend['淺ที่_date' if '淺ที่_date' in df_trend else 'วันที่_date'] >= (today - datetime.timedelta(days=365*5))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.to_period('Y').dt.to_timestamp()
                 x_tick_format = "%Y"
                 
@@ -479,7 +484,7 @@ else:
         st.markdown("---")
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
-            clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
+            clean_df_edit = df[["裝ที่" if "裝ที่" in df.columns else "วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
             edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v14")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
@@ -489,9 +494,12 @@ else:
                 st.success("Data updated!")
                 st.rerun()
 
+    # ==========================================
+    # 🏦 Tab 5: ระบบหนี้สินเชื่อมอนิเตอร์คลาวด์ถาวร (เชื่อมระบบคลังออม 100%)
+    # ==========================================
     with tab5:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🏦 เครื่องจำลองสินเชื่อระบบคลาวด์ถาวร (EMI Lock)</p>", unsafe_allow_html=True)
-        st.caption("💡 ข้อมูลในหน้านี้จะบันทึกเข้า Google Sheets อัตโนมัติ ไม่หายเมื่อกดรีเฟรชเว็บ")
+        st.caption("💡 ระบบผูกเข้ากับคลังเงินออมอัตโนมัติ ทุกการกู้หรือคืนเงินจะสะท้อนผลไปที่ Dashboard ทันที")
         
         with st.expander("🛠️ เปิดสัญญา / ปรับปรุงยอดเงินกู้ใหม่"):
             with st.form("loan_setup_form"):
@@ -509,8 +517,14 @@ else:
                     loan_sheet.update_cell(2, 3, new_m)
                     loan_sheet.update_cell(2, 4, 0)
                     loan_sheet.update_cell(2, 5, "")
-                    fetch_loans.clear() # เคลียร์เฉพาะ Cache สัญญาเงินกู้
-                    st.success("เปิดสัญญาเงินกู้ฉบับใหม่เรียบร้อยครับ!")
+                    
+                    # 🛠️ ซิงค์เข้าบัญชีหลัก: เพิ่มรายการ 'กู้เงินออม' โดยไม่กระทบ Income
+                    now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                    sheet.append_row([now_str, "กู้เงินออม", "บริหารเงินออม: กู้เงินออม", new_p, f"เปิดสัญญาเงินกู้ระบบจำลอง ฿{new_p:,.0f}"])
+                    
+                    fetch_loans.clear()
+                    fetch_main_data.clear()
+                    st.success("เปิดสัญญาเงินกู้ฉบับใหม่และบันทึกลงคลังเรียบร้อยครับ!")
                     st.rerun()
 
         def calculate_emi_schedule(P, annual_r, n):
@@ -557,8 +571,14 @@ else:
                     next_paid_count = current_month_paid + 1
                     loan_sheet.update_cell(2, 4, next_paid_count)
                     loan_sheet.update_cell(2, 5, current_real_month)
-                    fetch_loans.clear() # เคลียร์เฉพาะ Cache สัญญาเงินกู้
-                    st.toast(f"ชำระงวดที่ {next_paid_count} สำเร็จ! ข้อมูลซิงค์ขึ้นคลาวด์แล้ว ✨")
+                    
+                    # 🛠️ ซิงค์เข้าบัญชีหลัก: เพิ่มรายการ 'คืนเงินกู้ออม' ดึงกลับเข้าคลังออม
+                    now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                    sheet.append_row([now_str, "คืนเงินกู้ออม", "บริหารเงินออม: คืนเงินกู้ออม", emi_amount, f"ชำระค่างวดสินเชื่อจำลอง งวดที่ {next_paid_count}/{db_months}"])
+                    
+                    fetch_loans.clear()
+                    fetch_main_data.clear()
+                    st.toast(f"ชำระงวดที่ {next_paid_count} สำเร็จ! ระบบสแกนหักยอดและคืนคลังเรียบร้อย ✨")
                     st.rerun()
                     
         with col_info_lock:
