@@ -10,7 +10,7 @@ import json
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
-# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode อัตโนมัติ
+# 🔤 CSS สไตล์ Soft UI 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap');
@@ -21,7 +21,6 @@ st.markdown("""
     
     h1, h2, h3 { font-weight: 700; color: var(--text-color); }
     
-    /* แต่งปุ่มสไตล์คลีน */
     .stButton>button { 
         border-radius: 12px; 
         font-weight: 500; 
@@ -40,7 +39,6 @@ st.markdown("""
     
     .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text-color); opacity: 0.9; }
     
-    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) */
     .metric-card { 
         background-color: var(--secondary-background-color); 
         padding: 24px; 
@@ -54,14 +52,13 @@ st.markdown("""
     .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
     .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
-    /* ซ่อนลูกศรในช่องกรอกตัวเลข */
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("Minimal Finance Pro")
 
-# 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย
+# 🌍 บังคับโซนเวลาแอป
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 
 # --- ระบบเชื่อมต่อคลาวด์ ---
@@ -75,7 +72,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache ป้องกัน API Error
+# 🚀 ระบบ Smart Cache 
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -171,14 +168,14 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# คำนวณสรุปยอดบัญชีตามหลักคณิตศาสตร์ Ledger
-sav_dep = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
-sav_withdrawn = df[df['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
-sav_loan = df[df['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
-sav_repay = df[df['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum() if not df.empty else 0
+# 📌 การคำนวณคลังรวมทั้งหมด (เพื่อเอาไปโชว์ยอดคลังออมรวม)
+sav_dep_global = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
+sav_withdrawn_global = df[df['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
+sav_loan_global = df[df['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
+sav_repay_global = df[df['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum() if not df.empty else 0
 
-total_sav_now = sav_dep + sav_repay - sav_withdrawn - sav_loan
-outstanding_loan = sav_loan - sav_repay
+total_sav_now = sav_dep_global + sav_repay_global - sav_withdrawn_global - sav_loan_global
+outstanding_loan = sav_loan_global - sav_repay_global
 
 HONEY_POT_MAP = {
     "รายรับ": "#2a9d8f",     
@@ -312,28 +309,84 @@ else:
                     fetch_main_data.clear()
                     st.rerun()
 
+    # ==========================================
+    # 📊 Tab 2: Dashboard (อัปเกรดระบบตัดรอบบิลตามเหตุการณ์โอนเงิน)
+    # ==========================================
     with tab2:
         if not df.empty:
             df_chart = df.copy()
             df_chart['วันที่'] = pd.to_datetime(df_chart['วันเวลา'])
             
-            inc = df_chart[df_chart['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
-            exp = df_chart[df_chart['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
-            inv = df_chart[df_chart['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
+            # --- 💡 ระบบหาขอบเขตรอบบัญชีอัจฉริยะ (Smart Billing Cycle Logic) ---
+            # ค้นหารายรับหมวดหมู่ "เงินเดือน" หรือมีคำว่า "แม่" เป็นตัวจุดชนวนเริ่มรอบใหม่
+            salary_filter = (df_chart['ประเภท'] == 'รายรับ') & ((df_chart['หมวดหมู่หลัก'] == 'เงินเดือน') | (df_chart['หมวดหมู่'].str.contains('แม่', na=False)))
+            cycle_starts = df_chart[salary_filter].sort_values('วันเวลา')
             
-            net = inc + sav_withdrawn + sav_loan - exp - sav_dep - sav_repay
+            cycle_options = ["🌟 แสดงข้อมูลทั้งหมด (All Time)"]
+            cycle_ranges = []
+            
+            if not cycle_starts.empty:
+                dates = cycle_starts['วันเวลา'].tolist()
+                for i in range(len(dates)):
+                    start_date = dates[i]
+                    if i < len(dates) - 1:
+                        end_date = dates[i+1] - pd.Timedelta(seconds=1)
+                        label = f"📅 รอบ {start_date.strftime('%d %b %Y')} - {end_date.strftime('%d %b %Y')}"
+                        cycle_ranges.append((label, start_date, end_date))
+                    else:
+                        label = f"🟢 รอบบัญชีปัจจุบัน (เริ่ม {start_date.strftime('%d %b %Y')})"
+                        cycle_ranges.append((label, start_date, None))
+                
+                # นำรอบล่าสุด (ปัจจุบัน) ขึ้นมาไว้ด้านบนสุดของดรอปดาวน์
+                for r in reversed(cycle_ranges):
+                    cycle_options.append(r[0])
+            
+            col_dash_title, col_cycle_select = st.columns([1, 2])
+            with col_dash_title:
+                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Overview (รอบบัญชี)</p>", unsafe_allow_html=True)
+            with col_cycle_select:
+                selected_cycle = st.selectbox("⏳ เลือกรอบบัญชีในการแสดงผล Dashboard:", cycle_options, index=1 if len(cycle_options) > 1 else 0, label_visibility="collapsed")
+            
+            # --- ✂️ ตัดข้อมูล DataFrame ตามรอบบัญชีที่เลือก ---
+            df_dash = df_chart.copy()
+            if selected_cycle != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
+                for label, start, end in cycle_ranges:
+                    if label == selected_cycle:
+                        if end:
+                            df_dash = df_dash[(df_dash['วันเวลา'] >= start) & (df_dash['วันเวลา'] <= end)]
+                        else:
+                            df_dash = df_dash[df_dash['วันเวลา'] >= start]
+                        break
+
+            # --- กล่องสรุปตัวเลข (คำนวณจาก df_dash ที่ถูกตัดรอบบิลแล้ว) ---
+            inc = df_dash[df_dash['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
+            exp = df_dash[df_dash['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
+            inv = df_dash[df_dash['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
+            
+            sav_dep_d = df_dash[df_dash['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum()
+            sav_withdrawn_d = df_dash[df_dash['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum()
+            sav_loan_d = df_dash[df_dash['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum()
+            sav_repay_d = df_dash[df_dash['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum()
+
+            # คำนวณเงินสดคงเหลือและกระแสเงินออมเฉพาะในรอบเดือนที่เลือก
+            net = inc + sav_withdrawn_d + sav_loan_d - exp - sav_dep_d - sav_repay_d
+            sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
             m1, m2, m3, m4, m5 = st.columns(5)
             net_title_class = "metric-title" if net >= 0 else "metric-title-alert"
             m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Balance</div><div class='metric-value'>฿{net:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#f9744b;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ ค้างคืนคลัง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
-            m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{total_sav_now:,.0f}</div>{loan_badge}<div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            
+            # โชว์ยอดออมรอบนี้ เป็นตัวใหญ่ และแทรกยอดคลังรวม (total_sav_now) ตัวเล็กๆ ไว้ด้านล่าง
+            loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หนี้คลัง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
+            m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav_flow:,.0f}</div><div style='font-size:11px;color:#457b9d;font-weight:600;margin-top:2px;'>🏦 คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>", unsafe_allow_html=True)
+            
             m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
             st.markdown("---")
             
+            # --- 📈 ระบบกราฟแนวโน้ม (Trend Analysis) ---
             col_trend_title, col_trend_filter = st.columns([1.5, 2])
             with col_trend_title:
                 st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis (Stock Style)</p>", unsafe_allow_html=True)
@@ -343,7 +396,7 @@ else:
                 visible_metrics = c_ms.multiselect("เลือกเส้นวิเคราะห์คงเหลือ:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
             
             today = datetime.datetime.now(TZ_TH).date()
-            df_trend = df_chart.copy()
+            df_trend = df_dash.copy() # ใช้ Data ที่โดนกรองตามรอบบิลแล้วมาทำกราฟ!
             df_trend = df_trend.sort_values(by='วันเวลา')
             
             if "รายวัน" in time_frame:
@@ -355,7 +408,7 @@ else:
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
             elif "รายเดือน" in time_frame:
-                df_trend = df_trend[df_trend['วันที่_date'] >= (today - timedelta(days=30))] if 'timedelta' in globals() else df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=30))]
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=30))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
             elif "รายปี" in time_frame:
@@ -410,23 +463,19 @@ else:
             
             st.markdown("---")
             
-            # --- ⭕ Infographic สัดส่วนรายจ่าย (อัปเกรดระบบติ๊กเลือก Multiselect) ---
-            expense_df = df_chart[df_chart['ประเภท'] == 'รายจ่าย']
+            # --- ⭕ Infographic สัดส่วนรายจ่าย (วิเคราะห์เฉพาะข้อมูลในรอบบัญชี) ---
+            expense_df = df_dash[df_dash['ประเภท'] == 'รายจ่าย']
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
                 st.markdown("<p class='quick-add-text'>Expense Analysis</p>", unsafe_allow_html=True)
             with col_exp_filter:
                 if not expense_df.empty:
                     all_main_cats = sorted(list(expense_df['หมวดหมู่หลัก'].unique()))
-                    # 💡 อัปเกรดเป็นกล่องติ๊กเลือก Multiselect สามารถเลือกดูพร้อมกันได้หลายหมวด
                     selected_main_filter = st.multiselect("🔎 ติ๊กเลือกหมวดหมู่ที่ต้องการดู:", all_main_cats, default=all_main_cats)
 
             col_chart1, col_chart2 = st.columns([1, 1.2])
             if not expense_df.empty:
-                # กรองข้อมูลรายจ่ายตามหมวดหมู่ที่ติ๊กเลือก
                 filtered_expense_df = expense_df[expense_df['หมวดหมู่หลัก'].isin(selected_main_filter)] if selected_main_filter else pd.DataFrame(columns=expense_df.columns)
-                
-                # สร้าง color map จากหมวดหมู่ทั้งหมด เพื่อให้สีคงที่ ไม่เพี้ยนเวลาติ๊กเปิด/ปิด
                 all_pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
                 unique_main_cats = all_pie_data['หมวดหมู่หลัก'].tolist()
                 cat_color_map = {cat: SUB_CAT_PALETTE[i % len(SUB_CAT_PALETTE)] for i, cat in enumerate(unique_main_cats)}
@@ -444,12 +493,9 @@ else:
                 with col_chart2:
                     if not filtered_expense_df.empty:
                         sub_data = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
-                        
-                        # ถ้าติ๊กดูทั้งหมด ให้โชว์แค่ Top 8 หมวดย่อยเพื่อไม่ให้กราฟแท่งรกเกินไป
                         if len(selected_main_filter) == len(all_main_cats):
                             sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8)
                         else:
-                            # แต่ถ้าตั้งใจติ๊กดูเฉพาะเจาะจง ให้โชว์หมวดย่อยทั้งหมดที่ติ๊กเลือกเลย
                             sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False)
                         
                         fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h', color_discrete_map=cat_color_map) 
