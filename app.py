@@ -10,7 +10,7 @@ import json
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
-# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode อัตโนมัติ
+# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap');
@@ -21,7 +21,6 @@ st.markdown("""
     
     h1, h2, h3 { font-weight: 700; color: var(--text-color); }
     
-    /* แต่งปุ่มสไตล์คลีน */
     .stButton>button { 
         border-radius: 12px; 
         font-weight: 500; 
@@ -40,7 +39,6 @@ st.markdown("""
     
     .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text-color); opacity: 0.9; }
     
-    /* 📌 การ์ดแสดงผลตัวเลข (Metric Card) */
     .metric-card { 
         background-color: var(--secondary-background-color); 
         padding: 24px; 
@@ -54,17 +52,16 @@ st.markdown("""
     .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
     .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
-    /* ซ่อนลูกศรในช่องกรอกตัวเลข */
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("Minimal Finance Pro")
 
-# 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย
+# 🌍 บังคับโซนเวลาแอป
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 
-# --- ระบบเชื่อมต่อคลาวด์ ---
+# --- ระบบเชื่อมต่อคลาวด์ (เชื่อมต่อแค่ครั้งเดียว) ---
 @st.cache_resource
 def init_connection():
     creds_dict = json.loads(st.secrets["google_credentials"])
@@ -75,34 +72,63 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-try:
-    sheet = client.open(spreadsheet_name).sheet1
-except Exception as e:
+# 🚀 ระบบ Smart Cache ป้องกัน API Error (Rate Limit) ดึง Worksheet เก็บไว้ในความจำ
+@st.cache_resource(ttl=3600)
+def get_google_sheets():
+    try:
+        sh = client.open(spreadsheet_name)
+    except Exception:
+        return None, None, None, None
+        
+    sheet_main = sh.sheet1
+    
+    try:
+        sheet_qa = sh.worksheet("QuickAdds")
+    except:
+        sheet_qa = sh.add_worksheet(title="QuickAdds", rows="50", cols="5")
+        sheet_qa.append_row(["ชื่อปุ่ม", "ประเภท", "หมวดหมู่", "จำนวนเงิน"])
+        
+    try:
+        sheet_cat = sh.worksheet("Categories")
+    except:
+        sheet_cat = sh.add_worksheet(title="Categories", rows="100", cols="3")
+        sheet_cat.append_row(["ประเภท", "หมวดหมู่หลัก", "หมวดหมู่ย่อย"])
+        
+    try:
+        sheet_loan = sh.worksheet("Loans")
+    except:
+        sheet_loan = sh.add_worksheet(title="Loans", rows="10", cols="5")
+        sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
+        sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
+        
+    return sheet_main, sheet_qa, sheet_cat, sheet_loan
+
+sheet, qa_sheet, cat_sheet, loan_sheet = get_google_sheets()
+
+if sheet is None:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
+    st.info("💡 กรุณาตรวจสอบอีเมล Service Account ว่าได้เปิดสิทธิ์ Editor ในไฟล์ Google Sheets แล้วหรือยังครับ")
     st.stop()
 
-try:
-    qa_sheet = client.open(spreadsheet_name).worksheet("QuickAdds")
-except gspread.exceptions.WorksheetNotFound:
-    qa_sheet = client.open(spreadsheet_name).add_worksheet(title="QuickAdds", rows="50", cols="5")
-    qa_sheet.append_row(["ชื่อปุ่ม", "ประเภท", "หมวดหมู่", "จำนวนเงิน"])
+# --- ฟังก์ชันโหลดข้อมูลแยก Cache ---
+@st.cache_data(ttl=60)
+def fetch_main_data():
+    return sheet.get_all_records()
 
-try:
-    cat_sheet = client.open(spreadsheet_name).worksheet("Categories")
-except gspread.exceptions.WorksheetNotFound:
-    cat_sheet = client.open(spreadsheet_name).add_worksheet(title="Categories", rows="100", cols="3")
-    cat_sheet.append_row(["ประเภท", "หมวดหมู่หลัก", "หมวดหมู่ย่อย"])
+@st.cache_data(ttl=3600)
+def fetch_quick_adds():
+    return qa_sheet.get_all_records()
 
-try:
-    loan_sheet = client.open(spreadsheet_name).worksheet("Loans")
-except gspread.exceptions.WorksheetNotFound:
-    loan_sheet = client.open(spreadsheet_name).add_worksheet(title="Loans", rows="10", cols="5")
-    loan_sheet.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
-    loan_sheet.append_row([10000.0, 15.0, 12, 0, ""])
+@st.cache_data(ttl=3600)
+def fetch_categories():
+    return cat_sheet.get_all_records()
 
-# --- ฟังก์ชันโหลดข้อมูล ---
+@st.cache_data(ttl=60)
+def fetch_loans():
+    return loan_sheet.get_all_records()
+
 def load_data():
-    records = sheet.get_all_records()
+    records = fetch_main_data()
     if records:
         df = pd.DataFrame(records)
         parsed_time = pd.to_datetime(df['วันที่'], format='mixed', errors='coerce')
@@ -114,12 +140,8 @@ def load_data():
         return df
     return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "หมวดหมู่หลัก", "หมวดหมู่ย่อย", "วันเวลา", "วันที่_date"])
 
-def load_quick_adds():
-    records = qa_sheet.get_all_records()
-    return pd.DataFrame(records) if records else pd.DataFrame(columns=["ชื่อปุ่ม", "ประเภท", "หมวดหมู่", "จำนวนเงิน"])
-
 def load_categories():
-    records = cat_sheet.get_all_records()
+    records = fetch_categories()
     df = pd.DataFrame(records) if records else pd.DataFrame(columns=["ประเภท", "หมวดหมู่หลัก", "หมวดหมู่ย่อย"])
     cat_dict = {"📥 รายรับ": {}, "💸 รายจ่าย": {}, "🐷 เงินออม": {}, "📈 เงินลงทุน": {}}
     for _, row in df.iterrows():
@@ -132,10 +154,11 @@ def load_categories():
     return df, cat_dict
 
 df = load_data()
-qa_df = load_quick_adds()
+qa_records = fetch_quick_adds()
+qa_df = pd.DataFrame(qa_records) if qa_records else pd.DataFrame(columns=["ชื่อปุ่ม", "ประเภท", "หมวดหมู่", "จำนวนเงิน"])
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-loan_records = loan_sheet.get_all_records()
+loan_records = fetch_loans()
 if loan_records:
     loan_info = loan_records[0]
     db_principal = float(loan_info["เงินต้น"])
@@ -178,8 +201,8 @@ if app_mode == "📱 Mobile Mode":
             if st.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"mb_qa_{i}"):
                 now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
                 sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
+                fetch_main_data.clear() # เคลียร์เฉพาะ Cache ข้อมูลหลัก
                 st.toast("Success! ✨")
-                st.cache_data.clear()
                 st.rerun()
                 
     st.markdown("---")
@@ -218,7 +241,7 @@ if app_mode == "📱 Mobile Mode":
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
             combined_datetime = datetime.datetime.combine(chosen_date, datetime.datetime.now(TZ_TH).time())
             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
-            st.cache_data.clear()
+            fetch_main_data.clear() # เคลียร์เฉพาะ Cache ข้อมูลหลัก
             st.rerun()
 
 # ==========================================
@@ -238,8 +261,8 @@ else:
                     if col.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"dt_qa_{i}"):
                         now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
                         sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
+                        fetch_main_data.clear()
                         st.toast("Success! ✨")
-                        st.cache_data.clear()
                         st.rerun()
                         
             st.markdown("---")
@@ -283,7 +306,7 @@ else:
                     full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
                     combined_datetime = datetime.datetime.combine(chosen_date_dt, datetime.datetime.now(TZ_TH).time())
                     sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
-                    st.cache_data.clear()
+                    fetch_main_data.clear()
                     st.rerun()
 
     with tab2:
@@ -439,6 +462,7 @@ else:
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
+            fetch_categories.clear()
             st.success("Categories updated! ✨")
             st.rerun()
 
@@ -448,6 +472,7 @@ else:
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
+            fetch_quick_adds.clear()
             st.success("Quick adds updated!")
             st.rerun()
             
@@ -460,6 +485,7 @@ else:
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
                 sheet.update(range_name="A1", values=[edited_df.columns.values.tolist()] + edited_df.values.tolist())
+                fetch_main_data.clear()
                 st.success("Data updated!")
                 st.rerun()
 
@@ -483,6 +509,7 @@ else:
                     loan_sheet.update_cell(2, 3, new_m)
                     loan_sheet.update_cell(2, 4, 0)
                     loan_sheet.update_cell(2, 5, "")
+                    fetch_loans.clear() # เคลียร์เฉพาะ Cache สัญญาเงินกู้
                     st.success("เปิดสัญญาเงินกู้ฉบับใหม่เรียบร้อยครับ!")
                     st.rerun()
 
@@ -530,6 +557,7 @@ else:
                     next_paid_count = current_month_paid + 1
                     loan_sheet.update_cell(2, 4, next_paid_count)
                     loan_sheet.update_cell(2, 5, current_real_month)
+                    fetch_loans.clear() # เคลียร์เฉพาะ Cache สัญญาเงินกู้
                     st.toast(f"ชำระงวดที่ {next_paid_count} สำเร็จ! ข้อมูลซิงค์ขึ้นคลาวด์แล้ว ✨")
                     st.rerun()
                     
