@@ -321,7 +321,6 @@ else:
             exp = df_chart[df_chart['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_chart[df_chart['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
             
-            # สมการคลังสากล: หักลบรายจ่ายและปรับทิศทางเงินกู้/เงินออมเรียบร้อย
             net = inc + sav_withdrawn + sav_loan - exp - sav_dep - sav_repay
 
             m1, m2, m3, m4, m5 = st.columns(5)
@@ -356,15 +355,15 @@ else:
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
             elif "รายเดือน" in time_frame:
-                df_trend = df_trend[df_trend['淺ที่_date' if '淺ที่_date' in df_trend else 'วันที่_date'] >= (today - datetime.timedelta(days=30))]
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - timedelta(days=30))] if 'timedelta' in globals() else df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=30))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.floor('D')
                 x_tick_format = "%d %b"
             elif "รายปี" in time_frame:
-                df_trend = df_trend[df_trend['淺ที่_date' if '淺ที่_date' in df_trend else 'วันที่_date'] >= (today - datetime.timedelta(days=365))]
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.to_period('M').dt.to_timestamp()
                 x_tick_format = "%b %Y"
             else:
-                df_trend = df_trend[df_trend['淺ที่_date' if '淺ที่_date' in df_trend else 'วันที่_date'] >= (today - datetime.timedelta(days=365*5))]
+                df_trend = df_trend[df_trend['วันที่_date'] >= (today - datetime.timedelta(days=365*5))]
                 df_trend['เวลา'] = df_trend['วันเวลา'].dt.to_period('Y').dt.to_timestamp()
                 x_tick_format = "%Y"
                 
@@ -411,6 +410,7 @@ else:
             
             st.markdown("---")
             
+            # --- ⭕ Infographic สัดส่วนรายจ่าย (อัปเกรดระบบติ๊กเลือก Multiselect) ---
             expense_df = df_chart[df_chart['ประเภท'] == 'รายจ่าย']
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
@@ -418,37 +418,49 @@ else:
             with col_exp_filter:
                 if not expense_df.empty:
                     all_main_cats = sorted(list(expense_df['หมวดหมู่หลัก'].unique()))
-                    selected_main_filter = st.selectbox("🔎 เจาะลึกรายละเอียดหมวดหมู่ย่อยด้านขวา:", ["แสดงทั้งหมด"] + all_main_cats)
+                    # 💡 อัปเกรดเป็นกล่องติ๊กเลือก Multiselect สามารถเลือกดูพร้อมกันได้หลายหมวด
+                    selected_main_filter = st.multiselect("🔎 ติ๊กเลือกหมวดหมู่ที่ต้องการดู:", all_main_cats, default=all_main_cats)
 
             col_chart1, col_chart2 = st.columns([1, 1.2])
             if not expense_df.empty:
-                pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
-                unique_main_cats = pie_data['หมวดหมู่หลัก'].tolist()
+                # กรองข้อมูลรายจ่ายตามหมวดหมู่ที่ติ๊กเลือก
+                filtered_expense_df = expense_df[expense_df['หมวดหมู่หลัก'].isin(selected_main_filter)] if selected_main_filter else pd.DataFrame(columns=expense_df.columns)
+                
+                # สร้าง color map จากหมวดหมู่ทั้งหมด เพื่อให้สีคงที่ ไม่เพี้ยนเวลาติ๊กเปิด/ปิด
+                all_pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
+                unique_main_cats = all_pie_data['หมวดหมู่หลัก'].tolist()
                 cat_color_map = {cat: SUB_CAT_PALETTE[i % len(SUB_CAT_PALETTE)] for i, cat in enumerate(unique_main_cats)}
                 
                 with col_chart1:
-                    fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.78, color='หมวดหมู่หลัก', color_discrete_map=cat_color_map)
-                    fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)), textfont=dict(family='Poppins', size=11))
-                    fig_pie.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, margin=dict(t=30, b=30, l=30, r=30))
-                    st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
+                    if not filtered_expense_df.empty:
+                        pie_data = filtered_expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
+                        fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.78, color='หมวดหมู่หลัก', color_discrete_map=cat_color_map)
+                        fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)), textfont=dict(family='Poppins', size=11))
+                        fig_pie.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, margin=dict(t=30, b=30, l=30, r=30))
+                        st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
+                    else:
+                        st.info("กรุณาติ๊กเลือกอย่างน้อย 1 หมวดหมู่")
                         
                 with col_chart2:
-                    if selected_main_filter == "แสดงทั้งหมด":
-                        sub_data = expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
-                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8)
-                    else:
-                        sub_data = expense_df[expense_df['หมวดหมู่หลัก'] == selected_main_filter].groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
-                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False)
-                    
-                    fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h', color_discrete_map=cat_color_map) 
-                    fig_bar.update_traces(marker_line_width=0, opacity=0.9, texttemplate='฿%{x:,.0f}', textposition='outside', textfont=dict(family='Poppins', size=11))
-                    fig_bar.update_layout(
-                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                        xaxis=dict(showgrid=False, title="", zeroline=False, showticklabels=False),
-                        yaxis=dict(showgrid=False, title="", autorange="reversed", tickfont=dict(family='Poppins', size=12)),
-                        showlegend=False, margin=dict(t=10, b=10, l=0, r=30)
-                    )
-                    st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
+                    if not filtered_expense_df.empty:
+                        sub_data = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
+                        
+                        # ถ้าติ๊กดูทั้งหมด ให้โชว์แค่ Top 8 หมวดย่อยเพื่อไม่ให้กราฟแท่งรกเกินไป
+                        if len(selected_main_filter) == len(all_main_cats):
+                            sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8)
+                        else:
+                            # แต่ถ้าตั้งใจติ๊กดูเฉพาะเจาะจง ให้โชว์หมวดย่อยทั้งหมดที่ติ๊กเลือกเลย
+                            sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False)
+                        
+                        fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h', color_discrete_map=cat_color_map) 
+                        fig_bar.update_traces(marker_line_width=0, opacity=0.9, texttemplate='฿%{x:,.0f}', textposition='outside', textfont=dict(family='Poppins', size=11))
+                        fig_bar.update_layout(
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(showgrid=False, title="", zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, title="", autorange="reversed", tickfont=dict(family='Poppins', size=12)),
+                            showlegend=False, margin=dict(t=10, b=10, l=0, r=30)
+                        )
+                        st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
             else:
                 st.info("No expense data available.")
         else:
@@ -463,7 +475,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v14")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v15")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -473,7 +485,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v14")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v15")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -484,8 +496,8 @@ else:
         st.markdown("---")
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
-            clean_df_edit = df[["裝ที่" if "裝ที่" in df.columns else "วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v14")
+            clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v15")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
@@ -494,9 +506,6 @@ else:
                 st.success("Data updated!")
                 st.rerun()
 
-    # ==========================================
-    # 🏦 Tab 5: ระบบหนี้สินเชื่อมอนิเตอร์คลาวด์ถาวร (เชื่อมระบบคลังออม 100%)
-    # ==========================================
     with tab5:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🏦 เครื่องจำลองสินเชื่อระบบคลาวด์ถาวร (EMI Lock)</p>", unsafe_allow_html=True)
         st.caption("💡 ระบบผูกเข้ากับคลังเงินออมอัตโนมัติ ทุกการกู้หรือคืนเงินจะสะท้อนผลไปที่ Dashboard ทันที")
@@ -518,7 +527,6 @@ else:
                     loan_sheet.update_cell(2, 4, 0)
                     loan_sheet.update_cell(2, 5, "")
                     
-                    # 🛠️ ซิงค์เข้าบัญชีหลัก: เพิ่มรายการ 'กู้เงินออม' โดยไม่กระทบ Income
                     now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
                     sheet.append_row([now_str, "กู้เงินออม", "บริหารเงินออม: กู้เงินออม", new_p, f"เปิดสัญญาเงินกู้ระบบจำลอง ฿{new_p:,.0f}"])
                     
@@ -572,7 +580,6 @@ else:
                     loan_sheet.update_cell(2, 4, next_paid_count)
                     loan_sheet.update_cell(2, 5, current_real_month)
                     
-                    # 🛠️ ซิงค์เข้าบัญชีหลัก: เพิ่มรายการ 'คืนเงินกู้ออม' ดึงกลับเข้าคลังออม
                     now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
                     sheet.append_row([now_str, "คืนเงินกู้ออม", "บริหารเงินออม: คืนเงินกู้ออม", emi_amount, f"ชำระค่างวดสินเชื่อจำลอง งวดที่ {next_paid_count}/{db_months}"])
                     
