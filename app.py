@@ -58,7 +58,7 @@ st.markdown("""
 
 st.title("Minimal Finance Pro")
 
-# 🌍 บังคับโซนเวลาแอป
+# 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย (UTC+7)
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 
 # --- ระบบเชื่อมต่อคลาวด์ ---
@@ -72,13 +72,13 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache 
+# 🚀 ระบบ Smart Cache และสร้างชีต Circles อัตโนมัติ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
         sh = client.open(spreadsheet_name)
     except Exception:
-        return None, None, None, None
+        return None, None, None, None, None
         
     sheet_main = sh.sheet1
     
@@ -100,10 +100,19 @@ def get_google_sheets():
         sheet_loan = sh.add_worksheet(title="Loans", rows="10", cols="5")
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
-        
-    return sheet_main, sheet_qa, sheet_cat, sheet_loan
 
-sheet, qa_sheet, cat_sheet, loan_sheet = get_google_sheets()
+    # 🗂️ สร้าง Worksheet สำหรับล็อกรอบ Circle บัญชีโดยเฉพาะ
+    try:
+        sheet_circles = sh.worksheet("Circles")
+    except:
+        sheet_circles = sh.add_worksheet(title="Circles", rows="50", cols="5")
+        sheet_circles.append_row(["รหัสรอบ", "ชื่อรอบบัญชี", "วันเวลาเริ่ม", "วันเวลาสิ้นสุด", "สถานะ"])
+        # สร้างรอบตั้งต้นเริ่มต้นให้ทันที
+        sheet_circles.append_row([1, "🟢 รอบตั้งต้น (July 2026 - Present)", "2026-07-01 00:00:00", "", "Active"])
+        
+    return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_circles
+
+sheet, qa_sheet, cat_sheet, loan_sheet, circle_sheet = get_google_sheets()
 
 if sheet is None:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
@@ -125,6 +134,10 @@ def fetch_categories():
 @st.cache_data(ttl=60)
 def fetch_loans():
     return loan_sheet.get_all_records()
+
+@st.cache_data(ttl=60)
+def fetch_circles():
+    return circle_sheet.get_all_records()
 
 def load_data():
     records = fetch_main_data()
@@ -168,7 +181,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 📌 การคำนวณคลังรวมทั้งหมด (เพื่อเอาไปโชว์ยอดคลังออมรวม)
+# คำนวณคลังเงินออมสะสมทั้งหมด (Global Savings)
 sav_dep_global = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_withdrawn_global = df[df['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_loan_global = df[df['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
@@ -310,54 +323,78 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (อัปเกรดระบบตัดรอบบิลตามเหตุการณ์โอนเงิน)
+    # 📊 Tab 2: Dashboard (อัปเกรดระบบ Circle Controller & ตัวกรองอิสระ)
     # ==========================================
     with tab2:
         if not df.empty:
             df_chart = df.copy()
             df_chart['วันที่'] = pd.to_datetime(df_chart['วันเวลา'])
             
-            # --- 💡 ค้นหาขอบเขตรอบบัญชีอัจฉริยะ ---
-            salary_filter = (df_chart['ประเภท'] == 'รายรับ') & ((df_chart['หมวดหมู่หลัก'] == 'เงินเดือน') | (df_chart['หมวดหมู่'].str.contains('แม่', na=False)))
-            cycle_starts = df_chart[salary_filter].sort_values('วันเวลา')
+            # --- 💡 โหลดประวัติรอบ Circle ทั้งหมดจาก Google Sheets ---
+            circle_records = fetch_circles()
+            df_circles = pd.DataFrame(circle_records) if circle_records else pd.DataFrame(columns=["รหัสรอบ", "ชื่อรอบบัญชี", "วันเวลาเริ่ม", "วันเวลาสิ้นสุด", "สถานะ"])
             
-            cycle_options = ["🌟 แสดงข้อมูลทั้งหมด (All Time)"]
-            cycle_ranges = []
+            # ตัวกรองตัวเลือก Circle
+            cycle_options = ["🌟 แสดงข้อมูลภาพรวมทั้งหมด (All Time)"]
+            cycle_map = {}
+            active_circle_name = ""
             
-            if not cycle_starts.empty:
-                dates = cycle_starts['วันเวลา'].tolist()
-                for i in range(len(dates)):
-                    start_date = dates[i]
-                    if pd.isnull(start_date): continue
-                    if i < len(dates) - 1:
-                        end_date = dates[i+1] - pd.Timedelta(seconds=1)
-                        label = f"📅 รอบ {start_date.strftime('%d %b %Y')} - {end_date.strftime('%d %b %Y')}"
-                        cycle_ranges.append((label, start_date, end_date))
-                    else:
-                        label = f"🟢 รอบบัญชีปัจจุบัน (เริ่ม {start_date.strftime('%d %b %Y')})"
-                        cycle_ranges.append((label, start_date, None))
+            for _, c_row in df_circles.iterrows():
+                c_name = str(c_row["ชื่อรอบบัญชี"]).strip()
+                c_start = pd.to_datetime(c_row["วันเวลาเริ่ม"], errors="coerce")
+                c_end = pd.to_datetime(c_row["วันเวลาสิ้นสุด"], errors="coerce")
+                c_status = str(c_row["สถานะ"]).strip()
                 
-                for r in reversed(cycle_ranges):
-                    cycle_options.append(r[0])
-            
+                if pd.notnull(c_start):
+                    cycle_map[c_name] = (c_start, c_end, c_status)
+                    cycle_options.append(c_name)
+                    if c_status == "Active":
+                        active_circle_name = c_name
+
+            # --- 🛠️ แถบควบคุม Circle (เปิดรอบใหม่ / ปิดรอบเดิม) ---
+            with st.expander("🔄 บริหารจัดการรอบบัญชี (Circle Controller)", expanded=False):
+                st.markdown(f"**🟢 Circle ปัจจุบันที่กำลังใช้งาน:** `{active_circle_name if active_circle_name else 'ไม่มีรอบ Active'}`")
+                st.caption("เมื่อแม่โอนเงินรอบใหม่มา ให้พิมพ์ชื่อรอบแล้วกดปุ่มด้านล่าง ระบบจะปิด Circle เดิมและเริ่มนับรอบใหม่ทันทีครับ")
+                with st.form("new_circle_form"):
+                    new_circle_name = st.text_input("ตั้งชื่อรอบ Circle ใหม่:", placeholder="เช่น รอบ ส.ค. 2026 (แม่โอน 8,000)")
+                    if st.form_submit_button("✨ ปิด Circle เดิม & เริ่มนับรอบบัญชีใหม่ทันที"):
+                        if new_circle_name.strip() != "":
+                            now_time_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                            # 1. ปิดสถานะ Active รอบก่อนหน้าทั้งหมด
+                            all_c_data = circle_sheet.get_all_values()
+                            for row_idx in range(2, len(all_c_data) + 1):
+                                if len(all_c_data[row_idx-1]) >= 5 and all_c_data[row_idx-1][4] == "Active":
+                                    circle_sheet.update_cell(row_idx, 4, now_time_str) # ลงเวลาสิ้นสุด
+                                    circle_sheet.update_cell(row_idx, 5, "Closed")     # เปลี่ยนสถานะ
+                            
+                            # 2. เพิ่ม Circle ใหม่เป็น Active
+                            new_id = len(all_c_data)
+                            circle_sheet.append_row([new_id, new_circle_name.strip(), now_time_str, "", "Active"])
+                            fetch_circles.clear()
+                            st.success(f"เริ่ม {new_circle_name} เรียบร้อยแล้ว!")
+                            st.rerun()
+                        else:
+                            st.error("กรุณาพิมพ์ชื่อรอบ Circle ก่อนกดเริ่มรอบใหม่ครับ")
+
+            # --- 🔎 Dropdown เลือกดูรายงาน Circle ---
             col_dash_title, col_cycle_select = st.columns([1, 2])
             with col_dash_title:
-                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Overview (รอบบัญชี)</p>", unsafe_allow_html=True)
+                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Overview (เลือก Circle)</p>", unsafe_allow_html=True)
             with col_cycle_select:
-                selected_cycle = st.selectbox("⏳ เลือกรอบบัญชี:", cycle_options, index=1 if len(cycle_options) > 1 else 0, label_visibility="collapsed")
+                # ตั้งค่าเริ่มต้นให้เลือก Circle ที่กำลัง Active อยู่
+                default_idx = cycle_options.index(active_circle_name) if active_circle_name in cycle_options else (len(cycle_options)-1 if len(cycle_options)>1 else 0)
+                selected_cycle = st.selectbox("⏳ เลือก Circle ที่ต้องการวิเคราะห์:", cycle_options, index=default_idx, label_visibility="collapsed")
             
-            # กรองข้อมูลดิบตามรอบบิลที่เลือก
+            # --- ✂️ กรองข้อมูล DataFrame ตาม Circle ที่เลือก ---
             df_dash = df_chart.copy()
-            if selected_cycle != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
-                for label, start, end in cycle_ranges:
-                    if label == selected_cycle:
-                        if end:
-                            df_dash = df_dash[(df_dash['วันเวลา'] >= start) & (df_dash['วันเวลา'] <= end)]
-                        else:
-                            df_dash = df_dash[df_dash['วันเวลา'] >= start]
-                        break
+            if selected_cycle != "🌟 แสดงข้อมูลภาพรวมทั้งหมด (All Time)" and selected_cycle in cycle_map:
+                start_dt, end_dt, _ = cycle_map[selected_cycle]
+                if pd.notnull(end_dt):
+                    df_dash = df_dash[(df_dash['วันเวลา'] >= start_dt) & (df_dash['วันเวลา'] <= end_dt)]
+                else:
+                    df_dash = df_dash[df_dash['วันเวลา'] >= start_dt]
 
-            # คำนวณสรุปยอดบัญชีประจำรอบบิล
+            # --- กล่องสรุปตัวเลข (เฉพาะใน Circle ที่เลือก) ---
             inc = df_dash[df_dash['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_dash[df_dash['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_dash[df_dash['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
@@ -376,13 +413,13 @@ else:
             m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#f9744b;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
-            loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
+            loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หนี้คลัง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
             m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav_flow:,.0f}</div><div style='font-size:11px;color:#457b9d;font-weight:600;margin-top:2px;'>🏦 คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>", unsafe_allow_html=True)
             m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
             st.markdown("---")
             
-            # --- 📈 ระบบกราฟแนวโน้มสไตล์หุ้น ---
+            # --- 📈 ระบบกราฟแนวโน้ม (Trend Analysis) ---
             col_trend_title, col_trend_filter = st.columns([1.5, 2])
             with col_trend_title:
                 st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis (Stock Style)</p>", unsafe_allow_html=True)
@@ -393,7 +430,6 @@ else:
             
             today = datetime.datetime.now(TZ_TH).date()
             df_trend = df_dash.copy()
-            # ตัดข้อมูลที่วันที่พัง (NaT) ออกก่อนวาดกราฟ ป้องกันระบบพัง
             df_trend = df_trend.dropna(subset=['วันเวลา'])
             df_trend = df_trend.sort_values(by='วันเวลา')
             
@@ -464,14 +500,13 @@ else:
             
             st.markdown("---")
             
-            # --- ⭕ Infographic สัดส่วนรายจ่าย ---
+            # --- ⭕ Infographic สัดส่วนรายจ่าย (ใน Circle ที่เลือก) ---
             expense_df = df_dash[df_dash['ประเภท'] == 'รายจ่าย']
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
                 st.markdown("<p class='quick-add-text'>Expense Analysis</p>", unsafe_allow_html=True)
             with col_exp_filter:
                 if not expense_df.empty:
-                    # ป้องกันบั๊กค่าว่างในข้อมูลเก่าทำระบบพัง
                     raw_cats = expense_df['หมวดหมู่หลัก'].unique()
                     all_main_cats = sorted([str(c).strip() for c in raw_cats if pd.notnull(c) and str(c).strip() != ""])
                     selected_main_filter = st.multiselect("🔎 ติ๊กเลือกหมวดหมู่ที่ต้องการดู:", all_main_cats, default=all_main_cats)
@@ -486,7 +521,6 @@ else:
                 with col_chart1:
                     if not filtered_expense_df.empty:
                         pie_data = filtered_expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
-                        # ป้องกัน Plotly พังถ้ายอดเงินติดลบ
                         pie_data['จำนวนเงิน'] = pie_data['จำนวนเงิน'].abs() 
                         
                         fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.78, color='หมวดหมู่หลัก', color_discrete_map=cat_color_map)
@@ -529,7 +563,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v17")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v18")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -539,7 +573,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v17")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v18")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -551,7 +585,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v17")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v18")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
