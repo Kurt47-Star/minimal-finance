@@ -338,7 +338,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (อัปเกรด Bank Calibration & Carry Forward)
+    # 📊 Tab 2: Dashboard (อัปเกรด Bank Calibration ให้พิมพ์ง่ายสุดๆ)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -409,7 +409,6 @@ else:
             sav_loan_d = df_dash[df_dash['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum()
             sav_repay_d = df_dash[df_dash['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum()
 
-            # 💡 Net Balance ในแอป = ยอดยกมาจากรอบก่อน + รายรับใหม่ + กู้/ถอนออม - รายจ่าย - เงินออม/ลงทุน - คืนกู้
             net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d - exp - sav_dep_d - sav_repay_d
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
@@ -425,14 +424,23 @@ else:
                     c_cal3.markdown(f"**📱 สภาพคล่องในแอป**<br><h4>฿{net_in_cycle:,.2f}</h4>", unsafe_allow_html=True)
                     
                     with c_cal4:
-                        with st.form("calibrate_bank_form"):
-                            inp_kt = st.number_input("🏦 เงินจริงในบัญชีกรุงไทย (บาท)", value=selected_kt_real, step=100.0, format="%.2f")
+                        with st.form("calibrate_bank_form", clear_on_submit=True):
+                            # 💡 เปลี่ยน value=None และใช้ placeholder โชว์ค่าเดิมแทน จิ้มช่องแล้วพิมพ์หรือวางเลขได้เลย!
+                            inp_kt = st.number_input(
+                                "🏦 เงินจริงในบัญชีกรุงไทย (บาท)", 
+                                value=None, 
+                                placeholder=f"ปัจจุบัน: ฿{selected_kt_real:,.2f}", 
+                                step=100.0, 
+                                format="%.2f"
+                            )
                             if st.form_submit_button("💾 อัปเดตยอดจริงลงคลาวด์", use_container_width=True):
-                                if selected_row_idx:
+                                if selected_row_idx and inp_kt is not None:
                                     cycle_sheet.update_cell(selected_row_idx, 6, inp_kt)
                                     fetch_cycles.clear()
                                     st.success("คาลิเบรทยอดธนาคารจริงเรียบร้อย!")
                                     st.rerun()
+                                elif inp_kt is None:
+                                    st.warning("กรุณากรอกตัวเลขก่อนกดบันทึกครับ")
                     
                     if not is_balanced:
                         st.markdown(f"<div class='calib-box-diff'><b>💡 ข้อเสนอแนะ:</b> ขณะนี้ตัวเลขในแอป {'มากกว่า' if diff > 0 else 'น้อยกว่า'} เงินจริงในบัญชีกรุงไทยอยู่ <b>฿{abs(diff):,.2f}</b><br>สาเหตุอาจเกิดจากเงินที่โอนไปพักไว้ในแอปเป๋าตังค์ หรือมีรายการใช้จ่ายบางรายการที่ยังไม่ได้บันทึกครับ</div>", unsafe_allow_html=True)
@@ -464,11 +472,9 @@ else:
                         if active_row_idx:
                             cycle_sheet.update_cell(active_row_idx, 3, now_timestamp)
                             cycle_sheet.update_cell(active_row_idx, 4, "CLOSED")
-                            # ล็อกยอดจริงของรอบเก่าให้เท่ากับเงินสดคงเหลือสุดท้าย
                             cycle_sheet.update_cell(active_row_idx, 6, net_in_cycle)
                         
                         final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
-                        # 💡 บันทึกแถวใหม่ พร้อมใส่ "ยอดยกมา" เท่ากับ net_in_cycle เดิม
                         cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", float(net_in_cycle), float(net_in_cycle)])
                         fetch_cycles.clear()
                         st.success(f"จบรอบเดิมและเริ่ม {final_name} พร้อมยกยอดเงิน ฿{net_in_cycle:,.2f} เรียบร้อยครับ!")
@@ -620,7 +626,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v19")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v20")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -630,7 +636,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v19")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v20")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -642,7 +648,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v19")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v20")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
