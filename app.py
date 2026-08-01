@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบขยายขนาดตาราง Cycles อัตโนมัติ (Auto-Resize)
+# 🚀 ระบบ Smart Cache พร้อมระบบขยายขนาดตาราง Cycles อัตโนมัติ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -261,8 +261,14 @@ if app_mode == "📱 Mobile Mode":
         sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
         sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
     
-    date_shortcut = st.radio("Date", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True)
-    chosen_date = datetime.datetime.now(TZ_TH).date() if date_shortcut == "วันนี้" else ((datetime.datetime.now(TZ_TH) - datetime.timedelta(days=1)).date() if date_shortcut == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.datetime.now(TZ_TH).date()))
+    # --- ⏰ ระบบเลือกวันที่และเวลา (Mobile) ---
+    c_md1, c_mt1 = st.columns(2)
+    with c_md1:
+        date_shortcut = st.radio("วันที่ (Date)", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="mb_date_mode")
+        chosen_date = datetime.datetime.now(TZ_TH).date() if date_shortcut == "วันนี้" else ((datetime.datetime.now(TZ_TH) - datetime.timedelta(days=1)).date() if date_shortcut == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.datetime.now(TZ_TH).date(), key="mb_date_picker"))
+    with c_mt1:
+        time_shortcut = st.radio("เวลา (Time)", ["⏱️ เวลาปัจจุบัน", "⏰ ระบุเวลาเอง"], horizontal=True, key="mb_time_mode")
+        chosen_time = datetime.datetime.now(TZ_TH).time() if time_shortcut == "⏱️ เวลาปัจจุบัน" else st.time_input("เลือกเวลา", datetime.datetime.now(TZ_TH).time(), key="mb_time_picker")
 
     with st.form("mobile_form", clear_on_submit=True):
         amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
@@ -275,7 +281,11 @@ if app_mode == "📱 Mobile Mode":
                 elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
             
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-            combined_datetime = datetime.datetime.combine(chosen_date, datetime.datetime.now(TZ_TH).time())
+            
+            # 💡 ตัดสินใจเวลาบันทึก: ถ้าเลือกเวลาปัจจุบัน ให้ใช้วินาทีที่กดเซฟจริง
+            final_time = datetime.datetime.now(TZ_TH).time() if time_shortcut == "⏱️ เวลาปัจจุบัน" else chosen_time
+            combined_datetime = datetime.datetime.combine(chosen_date, final_time)
+            
             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
             fetch_main_data.clear()
             st.rerun()
@@ -324,10 +334,14 @@ else:
                     sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
                     sub_cat = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
-            c_date_tool, c_note_tool = st.columns([1, 2])
+            # --- ⏰ ระบบเลือกวันที่และเวลา (Desktop) ---
+            c_date_tool, c_time_tool = st.columns([1, 1])
             with c_date_tool:
-                date_shortcut_dt = st.radio("Date", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="dt_date_shortcut")
+                date_shortcut_dt = st.radio("วันที่ (Date)", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="dt_date_shortcut")
                 chosen_date_dt = datetime.datetime.now(TZ_TH).date() if date_shortcut_dt == "วันนี้" else ((datetime.datetime.now(TZ_TH) - datetime.timedelta(days=1)).date() if date_shortcut_dt == "เมื่อวาน" else st.date_input("เลือกวัน", datetime.datetime.now(TZ_TH).date(), key="dt_date_picker"))
+            with c_time_tool:
+                time_shortcut_dt = st.radio("เวลา (Time)", ["⏱️ เวลาปัจจุบัน", "⏰ ระบุเวลาเอง"], horizontal=True, key="dt_time_shortcut")
+                chosen_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut_dt == "⏱️ เวลาปัจจุบัน" else st.time_input("เลือกเวลา", datetime.datetime.now(TZ_TH).time(), key="dt_time_picker")
 
             with st.form("desktop_form", clear_on_submit=True):
                 amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
@@ -340,13 +354,17 @@ else:
                         elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
                         
                     full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-                    combined_datetime = datetime.datetime.combine(chosen_date_dt, datetime.datetime.now(TZ_TH).time())
+                    
+                    # 💡 ตัดสินใจเวลาบันทึก: ถ้าเลือกเวลาปัจจุบัน ให้ใช้วินาทีที่กดเซฟจริง
+                    final_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut_dt == "⏱️ เวลาปัจจุบัน" else chosen_time_dt
+                    combined_datetime = datetime.datetime.combine(chosen_date_dt, final_time_dt)
+                    
                     sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
                     fetch_main_data.clear()
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (อัปเกรดปุ่ม Clean-Slate ล้างส่วนต่างอดีต 100%)
+    # 📊 Tab 2: Dashboard (อัปเกรด Bank Calibration ให้พิมพ์ง่ายสุดๆ)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -360,6 +378,7 @@ else:
             cycle_options = []
             active_cycle_name = "รอบปัจจุบัน"
             active_row_idx = None
+            active_carry_forward = 0.0
             
             for idx, row in df_cycles.iterrows():
                 c_name = str(row['ชื่อรอบบัญชี']).strip()
@@ -372,6 +391,7 @@ else:
                 if c_status == "ACTIVE":
                     active_cycle_name = c_name
                     active_row_idx = idx + 2
+                    active_carry_forward = c_carry
                     cycle_options.append((f"🟢 {c_name} (เริ่ม {c_start[:10]})", c_start, None, c_carry, c_kt_real, idx + 2))
                 else:
                     cycle_options.append((f"📅 {c_name} ({c_start[:10]} - {c_end[:10]})", c_start, c_end, c_carry, c_kt_real, idx + 2))
@@ -450,7 +470,6 @@ else:
                             with sub1:
                                 save_cal = st.form_submit_button("💾 บันทึกยอดลงคลาวด์", use_container_width=True)
                             with sub2:
-                                # 💡 ปุ่มวิเศษ: ปรับเงินตั้งต้นให้อัตโนมัติ เพื่อล้างส่วนต่างเดือนที่แล้วทิ้ง 100%
                                 sync_clean = st.form_submit_button("✂️ ล้างส่วนต่างเดือนก่อน", use_container_width=True)
                             
                             if save_cal:
@@ -465,10 +484,8 @@ else:
                                     
                             if sync_clean:
                                 if selected_row_idx:
-                                    # คำนวณ flow รอบนี้: flow = net_in_cycle - selected_carry
                                     flow_in_cycle = net_in_cycle - selected_carry
                                     target_kt = inp_kt if inp_kt is not None else selected_kt_real
-                                    # คำนวณหา ยอดยกมา ที่จะทำให้ Net Balance เท่ากับ เงินจริงเป๊ะ
                                     new_carry = target_kt - flow_in_cycle
                                     cycle_sheet.update_cell(int(selected_row_idx), 5, float(new_carry))
                                     if inp_kt is not None:
@@ -510,7 +527,6 @@ else:
                             cycle_sheet.update_cell(int(active_row_idx), 6, float(net_in_cycle))
                         
                         final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
-                        # 💡 Clean-Slate: ใช้ยอดจริงในธนาคาร (selected_kt_real) เป็นยอดยกมาของเดือนใหม่
                         start_carry = float(selected_kt_real) if selected_kt_real > 0 else float(net_in_cycle)
                         cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", start_carry, start_carry])
                         fetch_cycles.clear()
@@ -663,7 +679,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v22")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v23")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -673,7 +689,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v22")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v23")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -685,7 +701,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v22")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v23")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
