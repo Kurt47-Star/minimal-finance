@@ -52,6 +52,21 @@ st.markdown("""
     .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
     .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
+    .calib-box-match {
+        background-color: rgba(42, 157, 143, 0.12);
+        border: 1px solid #2a9d8f;
+        border-radius: 16px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+    }
+    .calib-box-diff {
+        background-color: rgba(249, 116, 75, 0.12);
+        border: 1px solid #f9744b;
+        border-radius: 16px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+    }
+    
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 """, unsafe_allow_html=True)
@@ -72,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache ป้องกัน API Error และเชื่อมต่อชีตทั้งหมด (รวมถึง Cycles)
+# 🚀 ระบบ Smart Cache พร้อมปรับโครงสร้างชีต Cycles ให้รองรับการ Calibration
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -101,14 +116,14 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
-    # 📌 สร้างและตั้งค่าเริ่มต้นชีต "Cycles" ตามประวัติจริงของหมอ (July 2026 -> August 2026)
+    # 📌 ชีต Cycles อัปเกรดคอลัมน์: เพิ่ม "ยอดยกมา" และ "เงินจริงกรุงไทย"
     try:
         sheet_cycle = sh.worksheet("Cycles")
     except:
-        sheet_cycle = sh.add_worksheet(title="Cycles", rows="30", cols="4")
-        sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ"])
-        sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-08-01 22:34:23", "CLOSED"])
-        sheet_cycle.append_row(["August 2026", "2026-08-01 22:34:24", "", "ACTIVE"])
+        sheet_cycle = sh.add_worksheet(title="Cycles", rows="30", cols="6")
+        sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
+        sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-08-01 22:34:23", "CLOSED", 0.0, 2501.0])
+        sheet_cycle.append_row(["August 2026", "2026-08-01 22:34:24", "", "ACTIVE", 2501.0, 2501.0])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle
 
@@ -323,7 +338,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ระบบจัดการ Circle แม่นยำระดับวินาที)
+    # 📊 Tab 2: Dashboard (อัปเกรด Bank Calibration & Carry Forward)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -332,58 +347,50 @@ else:
             
             # --- 💡 โหลดข้อมูลจากชีต Cycles ---
             cycles_data = fetch_cycles()
-            df_cycles = pd.DataFrame(cycles_data) if cycles_data else pd.DataFrame(columns=["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ"])
+            df_cycles = pd.DataFrame(cycles_data) if cycles_data else pd.DataFrame(columns=["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
             
             cycle_options = []
             active_cycle_name = "รอบปัจจุบัน"
             active_row_idx = None
+            active_carry_forward = 0.0
             
             for idx, row in df_cycles.iterrows():
                 c_name = str(row['ชื่อรอบบัญชี']).strip()
                 c_status = str(row['สถานะ']).strip()
                 c_start = str(row['เริ่มต้น']).strip()
                 c_end = str(row['สิ้นสุด']).strip()
+                c_carry = float(row.get('ยอดยกมา', 0.0)) if pd.notnull(row.get('ยอดยกมา')) and str(row.get('ยอดยกมา')).strip() != "" else 0.0
+                c_kt_real = float(row.get('เงินจริงกรุงไทย', 0.0)) if pd.notnull(row.get('เงินจริงกรุงไทย')) and str(row.get('เงินจริงกรุงไทย')).strip() != "" else 0.0
                 
                 if c_status == "ACTIVE":
                     active_cycle_name = c_name
-                    active_row_idx = idx + 2 # บวก 2 สำหรับตำแหน่งแถวใน Google Sheets (1-based + Header)
-                    cycle_options.append((f"🟢 {c_name} (เริ่ม {c_start[:10]})", c_start, None))
+                    active_row_idx = idx + 2
+                    active_carry_forward = c_carry
+                    cycle_options.append((f"🟢 {c_name} (เริ่ม {c_start[:10]})", c_start, None, c_carry, c_kt_real, idx + 2))
                 else:
-                    cycle_options.append((f"📅 {c_name} ({c_start[:10]} - {c_end[:10]})", c_start, c_end))
+                    cycle_options.append((f"📅 {c_name} ({c_start[:10]} - {c_end[:10]})", c_start, c_end, c_carry, c_kt_real, idx + 2))
             
-            # เรียงรอบปัจจุบันขึ้นบนสุด ตามด้วยอดีต และปิดท้ายด้วย All Time
             cycle_options.reverse()
             cycle_labels = [opt[0] for opt in cycle_options] + ["🌟 แสดงข้อมูลทั้งหมด (All Time)"]
             
-            # --- 🛠️ ส่วนควบคุมการเปิด-ปิดรอบบัญชี (Cycle Manager) ---
-            with st.expander("🔄 ควบคุมรอบบัญชี (Start / End Circle)", expanded=False):
-                st.write(f"📌 รอบบัญชีที่กำลังใช้งานอยู่ตอนนี้คือ: **{active_cycle_name}**")
-                with st.form("new_cycle_form"):
-                    new_circle_name = st.text_input("ชื่อ Circle ใหม่ที่จะเปิด (เช่น September 2026)", placeholder="ระบุชื่อรอบเดือนใหม่...")
-                    if st.form_submit_button("⏹️ จบรอบปัจจุบัน & เริ่ม Circle ใหม่ทันที"):
-                        now_timestamp = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                        if active_row_idx:
-                            # ปิดรอบเดิม
-                            cycle_sheet.update_cell(active_row_idx, 3, now_timestamp)
-                            cycle_sheet.update_cell(active_row_idx, 4, "CLOSED")
-                        # เปิดรอบใหม่
-                        final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
-                        cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE"])
-                        fetch_cycles.clear()
-                        st.success(f"จบรอบเดิมและเริ่ม {final_name} เรียบร้อยครับ!")
-                        st.rerun()
-
             col_dash_title, col_cycle_select = st.columns([1, 2])
             with col_dash_title:
                 st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Overview (รอบบัญชี)</p>", unsafe_allow_html=True)
             with col_cycle_select:
                 selected_cycle_label = st.selectbox("⏳ เลือก Circle ในการแสดงผล:", cycle_labels, index=0, label_visibility="collapsed")
             
-            # --- ✂️ กรองข้อมูลดิบตามรอบบัญชีที่เลือก ---
+            # --- ✂️ กรองข้อมูลดิบและดึงยอดยกมาประจำรอบ ---
             df_dash = df_chart.copy()
+            selected_carry = 0.0
+            selected_kt_real = 0.0
+            selected_row_idx = None
+            
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
-                for label, start_str, end_str in cycle_options:
+                for label, start_str, end_str, carry_val, kt_val, r_idx in cycle_options:
                     if label == selected_cycle_label:
+                        selected_carry = carry_val
+                        selected_kt_real = kt_val
+                        selected_row_idx = r_idx
                         start_dt = pd.to_datetime(start_str)
                         if end_str and pd.notnull(end_str) and end_str != "":
                             end_dt = pd.to_datetime(end_str)
@@ -402,13 +409,41 @@ else:
             sav_loan_d = df_dash[df_dash['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum()
             sav_repay_d = df_dash[df_dash['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum()
 
-            net = inc + sav_withdrawn_d + sav_loan_d - exp - sav_dep_d - sav_repay_d
+            # 💡 Net Balance ในแอป = ยอดยกมาจากรอบก่อน + รายรับใหม่ + กู้/ถอนออม - รายจ่าย - เงินออม/ลงทุน - คืนกู้
+            net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d - exp - sav_dep_d - sav_repay_d
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
+            # --- ⚖️ ส่วนกระทบยอดบัญชีจริง (Bank Calibration Banner) ---
+            if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
+                diff = net_in_cycle - selected_kt_real
+                is_balanced = abs(diff) < 0.01
+                
+                with st.expander(f"⚖️ คาลิเบรทบัญชีกรุงไทยจริง (Bank Calibration): {'✅ ตรงกัน 100%' if is_balanced else f'⚠️ ส่วนต่าง ฿{diff:,.2f}'}", expanded=not is_balanced):
+                    c_cal1, c_cal2, c_cal3, c_cal4 = st.columns([1.2, 1.2, 1.2, 1.5])
+                    c_cal1.markdown(f"**💰 ยอดยกมาจากรอบก่อน**<br><h4>฿{selected_carry:,.2f}</h4>", unsafe_allow_html=True)
+                    c_cal2.markdown(f"**📥 รายรับเริ่มต้นรอบนี้**<br><h4 style='color:#2a9d8f;'>+฿{inc:,.2f}</h4>", unsafe_allow_html=True)
+                    c_cal3.markdown(f"**📱 สภาพคล่องในแอป**<br><h4>฿{net_in_cycle:,.2f}</h4>", unsafe_allow_html=True)
+                    
+                    with c_cal4:
+                        with st.form("calibrate_bank_form"):
+                            inp_kt = st.number_input("🏦 เงินจริงในบัญชีกรุงไทย (บาท)", value=selected_kt_real, step=100.0, format="%.2f")
+                            if st.form_submit_button("💾 อัปเดตยอดจริงลงคลาวด์", use_container_width=True):
+                                if selected_row_idx:
+                                    cycle_sheet.update_cell(selected_row_idx, 6, inp_kt)
+                                    fetch_cycles.clear()
+                                    st.success("คาลิเบรทยอดธนาคารจริงเรียบร้อย!")
+                                    st.rerun()
+                    
+                    if not is_balanced:
+                        st.markdown(f"<div class='calib-box-diff'><b>💡 ข้อเสนอแนะ:</b> ขณะนี้ตัวเลขในแอป {'มากกว่า' if diff > 0 else 'น้อยกว่า'} เงินจริงในบัญชีกรุงไทยอยู่ <b>฿{abs(diff):,.2f}</b><br>สาเหตุอาจเกิดจากเงินที่โอนไปพักไว้ในแอปเป๋าตังค์ หรือมีรายการใช้จ่ายบางรายการที่ยังไม่ได้บันทึกครับ</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown("<div class='calib-box-match'><b>🎉 ยอดเยี่ยมมากครับหมอ!</b> ยอดเงินคงเหลือใน Minimal Finance Pro ตรงกับเงินจริงในบัญชีกรุงไทยเป๊ะ 100% ครับ</div>", unsafe_allow_html=True)
+
+            # --- กล่องสรุปตัวเลขหลัก (Metric Cards) ---
             m1, m2, m3, m4, m5 = st.columns(5)
-            net_title_class = "metric-title" if net >= 0 else "metric-title-alert"
-            m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Balance</div><div class='metric-value'>฿{net:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            net_title_class = "metric-title" if net_in_cycle >= 0 else "metric-title-alert"
+            m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Balance</div><div class='metric-value'>฿{net_in_cycle:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income (รอบนี้) <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#f9744b;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
             loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
@@ -417,6 +452,30 @@ else:
             
             st.markdown("---")
             
+            # --- 🔄 ส่วนควบคุมรอบบัญชี (Start / End Circle) พร้อมระบบยกยอดอัตโนมัติ ---
+            with st.expander("🔄 เปิด Circle ใหม่ & สั่งตัดรอบบัญชี (Cycle Control)", expanded=False):
+                st.write(f"📌 รอบบัญชีที่กำลังใช้งานอยู่ตอนนี้คือ: **{active_cycle_name}**")
+                st.caption(f"💡 เมื่อกดเริ่ม Circle ใหม่ ระบบจะยึดเวลาปัจจุบันเป็นจุดสิ้นสุดรอบเดิม และนำยอดเงินคงเหลือปัจจุบัน (฿{net_in_cycle:,.2f}) ยกยอดไปตั้งต้นใน Circle ใหม่ให้อัตโนมัติครับ")
+                
+                with st.form("new_cycle_form"):
+                    new_circle_name = st.text_input("ชื่อ Circle ใหม่ที่จะเปิด (เช่น September 2026)", placeholder="ระบุชื่อรอบเดือนใหม่...")
+                    if st.form_submit_button("⏹️ จบรอบปัจจุบัน & เริ่ม Circle ใหม่ทันที", use_container_width=True):
+                        now_timestamp = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                        if active_row_idx:
+                            cycle_sheet.update_cell(active_row_idx, 3, now_timestamp)
+                            cycle_sheet.update_cell(active_row_idx, 4, "CLOSED")
+                            # ล็อกยอดจริงของรอบเก่าให้เท่ากับเงินสดคงเหลือสุดท้าย
+                            cycle_sheet.update_cell(active_row_idx, 6, net_in_cycle)
+                        
+                        final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
+                        # 💡 บันทึกแถวใหม่ พร้อมใส่ "ยอดยกมา" เท่ากับ net_in_cycle เดิม
+                        cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", float(net_in_cycle), float(net_in_cycle)])
+                        fetch_cycles.clear()
+                        st.success(f"จบรอบเดิมและเริ่ม {final_name} พร้อมยกยอดเงิน ฿{net_in_cycle:,.2f} เรียบร้อยครับ!")
+                        st.rerun()
+
+            st.markdown("---")
+
             # --- 📈 ระบบกราฟแนวโน้มสไตล์หุ้น ---
             col_trend_title, col_trend_filter = st.columns([1.5, 2])
             with col_trend_title:
@@ -561,7 +620,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v18")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v19")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -571,7 +630,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v18")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v19")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -583,7 +642,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v18")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v19")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
