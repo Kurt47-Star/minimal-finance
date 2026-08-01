@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมปรับโครงสร้างชีต Cycles ให้รองรับการ Calibration
+# 🚀 ระบบ Smart Cache พร้อมระบบขยายขนาดตาราง Cycles อัตโนมัติ (Auto-Resize)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -116,11 +116,20 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
-    # 📌 ชีต Cycles อัปเกรดคอลัมน์: เพิ่ม "ยอดยกมา" และ "เงินจริงกรุงไทย"
+    # 📌 จัดการชีต Cycles: ขยายคอลัมน์อัตโนมัติเพื่อป้องกัน APIError
     try:
         sheet_cycle = sh.worksheet("Cycles")
+        try:
+            # สั่งขยายขนาดตารางให้รองรับถึง 10 คอลัมน์ ป้องกันบั๊กเขียนคอลัมน์ที่ 6 แล้วฟ้อง Error
+            sheet_cycle.resize(rows=50, cols=10)
+            headers = sheet_cycle.row_values(1)
+            if len(headers) < 6:
+                sheet_cycle.update_cell(1, 5, "ยอดยกมา")
+                sheet_cycle.update_cell(1, 6, "เงินจริงกรุงไทย")
+        except Exception:
+            pass
     except:
-        sheet_cycle = sh.add_worksheet(title="Cycles", rows="30", cols="6")
+        sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
         sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-08-01 22:34:23", "CLOSED", 0.0, 2501.0])
         sheet_cycle.append_row(["August 2026", "2026-08-01 22:34:24", "", "ACTIVE", 2501.0, 2501.0])
@@ -338,7 +347,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (อัปเกรด Bank Calibration ให้พิมพ์ง่ายสุดๆ)
+    # 📊 Tab 2: Dashboard (อัปเกรด Bank Calibration ให้ปลอดภัยจาก APIError)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -425,7 +434,6 @@ else:
                     
                     with c_cal4:
                         with st.form("calibrate_bank_form", clear_on_submit=True):
-                            # 💡 เปลี่ยน value=None และใช้ placeholder โชว์ค่าเดิมแทน จิ้มช่องแล้วพิมพ์หรือวางเลขได้เลย!
                             inp_kt = st.number_input(
                                 "🏦 เงินจริงในบัญชีกรุงไทย (บาท)", 
                                 value=None, 
@@ -435,7 +443,8 @@ else:
                             )
                             if st.form_submit_button("💾 อัปเดตยอดจริงลงคลาวด์", use_container_width=True):
                                 if selected_row_idx and inp_kt is not None:
-                                    cycle_sheet.update_cell(selected_row_idx, 6, inp_kt)
+                                    # 🛠️ แปลงประเภทข้อมูลให้เป็น python float ชัดเจนเพื่อป้องกัน gspread ฟ้อง APIError
+                                    cycle_sheet.update_cell(int(selected_row_idx), 6, float(inp_kt))
                                     fetch_cycles.clear()
                                     st.success("คาลิเบรทยอดธนาคารจริงเรียบร้อย!")
                                     st.rerun()
@@ -470,9 +479,9 @@ else:
                     if st.form_submit_button("⏹️ จบรอบปัจจุบัน & เริ่ม Circle ใหม่ทันที", use_container_width=True):
                         now_timestamp = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
                         if active_row_idx:
-                            cycle_sheet.update_cell(active_row_idx, 3, now_timestamp)
-                            cycle_sheet.update_cell(active_row_idx, 4, "CLOSED")
-                            cycle_sheet.update_cell(active_row_idx, 6, net_in_cycle)
+                            cycle_sheet.update_cell(int(active_row_idx), 3, now_timestamp)
+                            cycle_sheet.update_cell(int(active_row_idx), 4, "CLOSED")
+                            cycle_sheet.update_cell(int(active_row_idx), 6, float(net_in_cycle))
                         
                         final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
                         cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", float(net_in_cycle), float(net_in_cycle)])
@@ -626,7 +635,7 @@ else:
 
     with tab4:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v20")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v21")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -636,7 +645,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v20")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v21")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -648,7 +657,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v20")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v21")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
