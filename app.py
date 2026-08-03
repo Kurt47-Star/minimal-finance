@@ -87,15 +87,22 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบขยายขนาดตาราง Cycles อัตโนมัติ (Auto-Resize)
+# 🚀 ระบบ Smart Cache พร้อมสร้างตาราง Receivables และรองรับ Multi-Wallet
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
         sh = client.open(spreadsheet_name)
     except Exception:
-        return None, None, None, None, None
+        return None, None, None, None, None, None
         
     sheet_main = sh.sheet1
+    try:
+        sheet_main.resize(rows=500, cols=8)
+        headers = sheet_main.row_values(1)
+        if len(headers) < 6 or headers[5] != "กระเป๋า":
+            sheet_main.update_cell(1, 6, "กระเป๋า")
+    except Exception:
+        pass
     
     try:
         sheet_qa = sh.worksheet("QuickAdds")
@@ -131,10 +138,17 @@ def get_google_sheets():
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
         sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-08-01 22:34:23", "CLOSED", 0.0, 2501.0])
         sheet_cycle.append_row(["August 2026", "2026-08-01 22:34:24", "", "ACTIVE", 2501.0, 2501.0])
-        
-    return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle
 
-sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet = get_google_sheets()
+    # 📌 สร้างชีต "Receivables" สำหรับระบบลูกหนี้และหารค่าข้าว
+    try:
+        sheet_debt = sh.worksheet("Receivables")
+    except:
+        sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="7")
+        sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
+        
+    return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt
+
+sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet, debt_sheet = get_google_sheets()
 
 if sheet is None:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
@@ -161,7 +175,10 @@ def fetch_loans():
 def fetch_cycles():
     return cycle_sheet.get_all_records()
 
-# 💡 ฟังก์ชันแปลงเวลาที่พิมพ์เองให้ปลอดภัย ไม่พังแม้อาจพิมพ์ผิดรูปแบบ
+@st.cache_data(ttl=60)
+def fetch_receivables():
+    return debt_sheet.get_all_records()
+
 def parse_custom_time(time_str, default_time):
     try:
         parts = str(time_str).strip().split(':')
@@ -183,8 +200,12 @@ def load_data():
         df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0)
         df['หมวดหมู่หลัก'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[0].strip() if pd.notnull(x) else "ทั่วไป")
         df['หมวดหมู่ย่อย'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[1].strip() if pd.notnull(x) and ":" in str(x) else "ทั่วไป")
+        if 'กระเป๋า' not in df.columns:
+            df['กระเป๋า'] = '🏦 กรุงไทย'
+        else:
+            df['กระเป๋า'] = df['กระเป๋า'].fillna('🏦 กรุงไทย').replace('', '🏦 กรุงไทย')
         return df
-    return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "หมวดหมู่หลัก", "หมวดหมู่ย่อย", "วันเวลา", "วันที่_date"])
+    return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า", "หมวดหมู่หลัก", "หมวดหมู่ย่อย", "วันเวลา", "วันที่_date"])
 
 def load_categories():
     records = fetch_categories()
@@ -247,14 +268,17 @@ if app_mode == "📱 Mobile Mode":
         for i, row in qa_df.iterrows():
             if st.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"mb_qa_{i}"):
                 now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
+                sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", "🏦 กรุงไทย"])
                 fetch_main_data.clear()
                 st.toast("Success! ✨")
                 st.rerun()
                 
     st.markdown("---")
     st.markdown("<p class='quick-add-text'>New Transaction</p>", unsafe_allow_html=True)
-    type_entry = st.selectbox("Type", ["💸 รายจ่าย", "📥 รายรับ", "🐷 เงินออม", "📈 เงินลงทุน"])
+    
+    # 💡 เพิ่มโหมด TrueMoney Wallet และการโอนย้ายกระเป๋าในเมนูมือถือ
+    type_entry = st.selectbox("Type", ["💸 รายจ่าย", "📥 รายรับ", "🔄 โอนย้ายกระเป๋า", "🐷 เงินออม", "📈 เงินลงทุน"])
+    wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet)", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"])
     
     if "เงินออม" in type_entry:
         sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True)
@@ -266,13 +290,16 @@ if app_mode == "📱 Mobile Mode":
         """, unsafe_allow_html=True)
         main_cat = "บริหารเงินออม"
         sub_cat = sav_action.split(" ")[1]
+    elif "โอนย้ายกระเป๋า" in type_entry:
+        transfer_dir = st.radio("ทิศทางการโอน:", ["🏦 กรุงไทย ➡️ 📱 TrueMoney", "📱 TrueMoney ➡️ 🏦 กรุงไทย"], horizontal=True)
+        main_cat = "โอนย้ายระหว่างกระเป๋า"
+        sub_cat = "เข้า TrueMoney" if "TrueMoney" in transfer_dir.split("➡️")[1] else "เข้ากรุงไทย"
     else:
         main_options = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
         main_cat = st.selectbox("Category", main_options, key="mb_main")
         sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
         sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
     
-    # --- ⏰ ระบบเลือกวันที่และเวลาแบบพิมพ์เองอิสระ (Mobile) ---
     c_md1, c_mt1 = st.columns(2)
     with c_md1:
         date_shortcut = st.radio("วันที่ (Date)", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="mb_date_mode")
@@ -283,7 +310,7 @@ if app_mode == "📱 Mobile Mode":
             chosen_time_str = datetime.datetime.now(TZ_TH).strftime('%H:%M:%S')
             st.text_input("เวลา", value=chosen_time_str, disabled=True, key="mb_time_show")
         else:
-            chosen_time_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23 หรือ 22:30)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="mb_time_type")
+            chosen_time_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="mb_time_type")
 
     with st.form("mobile_form", clear_on_submit=True):
         amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
@@ -296,20 +323,18 @@ if app_mode == "📱 Mobile Mode":
                 elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
             
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-            
-            # 💡 แปลงเวลาที่พิมพ์ให้เป็น object อย่างปลอดภัย
             final_time = datetime.datetime.now(TZ_TH).time() if time_shortcut == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_str, datetime.datetime.now(TZ_TH).time())
             combined_datetime = datetime.datetime.combine(chosen_date, final_time)
             
-            sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
+            sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
             fetch_main_data.clear()
             st.rerun()
 
 # ==========================================
-# 💻 โหมดคอมพิวเตอร์ (Desktop Mode)
+# 💻 โหมดคอมพิวเตอร์ (Desktop Mode - 6 Tabs)
 # ==========================================
 else:
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["✨ Transaction", "📊 Dashboard", "🎯 Goals", "⚙️ Settings", "🏦 Loan Simulator"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["✨ Transaction", "📊 Dashboard", "🤝 ลูกหนี้ & หารบิล", "🎯 Goals", "⚙️ Settings", "🏦 Loan Simulator"])
 
     with tab1:
         col_main, col_space = st.columns([2, 1])
@@ -321,14 +346,19 @@ else:
                     col = cols[i % 4]
                     if col.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"dt_qa_{i}"):
                         now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                        sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน"])
+                        sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", "🏦 กรุงไทย"])
                         fetch_main_data.clear()
                         st.toast("Success! ✨")
                         st.rerun()
                         
             st.markdown("---")
             st.markdown("<p class='quick-add-text'>New Transaction</p>", unsafe_allow_html=True)
-            type_entry = st.radio("Type", ["📥 รายรับ", "💸 รายจ่าย", "🐷 เงินออม", "📈 เงินลงทุน"], horizontal=True, label_visibility="collapsed")
+            
+            c_type, c_wallet = st.columns([3, 1.5])
+            with c_type:
+                type_entry = st.radio("Type", ["📥 รายรับ", "💸 รายจ่าย", "🔄 โอนย้ายกระเป๋า", "🐷 เงินออม", "📈 เงินลงทุน"], horizontal=True, label_visibility="collapsed")
+            with c_wallet:
+                wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet):", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"], label_visibility="collapsed")
             
             if "เงินออม" in type_entry:
                 sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True, key="dt_sav_action")
@@ -340,6 +370,10 @@ else:
                 """, unsafe_allow_html=True)
                 main_cat = "บริหารเงินออม"
                 sub_cat = sav_action.split(" ")[1]
+            elif "โอนย้ายกระเป๋า" in type_entry:
+                transfer_dir = st.radio("ทิศทางการโอน:", ["🏦 กรุงไทย ➡️ 📱 TrueMoney", "📱 TrueMoney ➡️ 🏦 กรุงไทย"], horizontal=True)
+                main_cat = "โอนย้ายระหว่างกระเป๋า"
+                sub_cat = "เข้า TrueMoney" if "TrueMoney" in transfer_dir.split("➡️")[1] else "เข้ากรุงไทย"
             else:
                 c_main, c_sub = st.columns(2)
                 with c_main:
@@ -349,7 +383,6 @@ else:
                     sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
                     sub_cat = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
-            # --- ⏰ ระบบเลือกวันที่และเวลาแบบพิมพ์เองอิสระ (Desktop) ---
             c_date_tool, c_time_tool = st.columns([1, 1])
             with c_date_tool:
                 date_shortcut_dt = st.radio("วันที่ (Date)", ["วันนี้", "เมื่อวาน", "ระบุเอง"], horizontal=True, key="dt_date_shortcut")
@@ -360,7 +393,7 @@ else:
                     chosen_time_dt_str = datetime.datetime.now(TZ_TH).strftime('%H:%M:%S')
                     st.text_input("เวลา", value=chosen_time_dt_str, disabled=True, key="dt_time_show")
                 else:
-                    chosen_time_dt_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23 หรือ 22:30)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="dt_time_type")
+                    chosen_time_dt_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="dt_time_type")
 
             with st.form("desktop_form", clear_on_submit=True):
                 amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
@@ -373,17 +406,15 @@ else:
                         elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
                         
                     full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-                    
-                    # 💡 แปลงเวลาที่พิมพ์ให้เป็น object อย่างปลอดภัย
                     final_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut_dt == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_dt_str, datetime.datetime.now(TZ_TH).time())
                     combined_datetime = datetime.datetime.combine(chosen_date_dt, final_time_dt)
                     
-                    sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note])
+                    sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
                     fetch_main_data.clear()
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (Clean-Slate Bank Calibration & Carry Forward)
+    # 📊 Tab 2: Dashboard (ระบบแยกยอด กรุงไทย + TrueMoney Wallet)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -442,6 +473,7 @@ else:
                             df_dash = df_dash[df_dash['วันที่'] >= start_dt]
                         break
 
+            # คำนวณรายรับ-รายจ่ายหลัก
             inc = df_dash[df_dash['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_dash[df_dash['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_dash[df_dash['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
@@ -451,36 +483,58 @@ else:
             sav_loan_d = df_dash[df_dash['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum()
             sav_repay_d = df_dash[df_dash['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum()
 
-            net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d - exp - sav_dep_d - sav_repay_d
+            # 💡 เงินทดจ่ายให้คนอื่น (ลูกหนี้) และรับคืนเงินทดจ่าย
+            lend_d = df_dash[df_dash['ประเภท'] == '🤝 เงินทดจ่าย']['จำนวนเงิน'].sum()
+            refund_d = df_dash[df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย']['จำนวนเงิน'].sum()
+
+            # 💡 Net Balance รวมทั้ง 2 กระเป๋า (การโอนย้ายภายในไม่กระทบยอดนี้)
+            net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d - exp - sav_dep_d - sav_repay_d - lend_d
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
-            # --- ⚖️ ส่วนกระทบยอดบัญชีจริง (Bank Calibration Banner) ---
+            # 💡 คำนวณแยกยอดเงินใน TrueMoney Wallet และ กรุงไทย
+            tm_inc = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายรับ')]['จำนวนเงิน'].sum()
+            tm_exp = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายจ่าย')]['จำนวนเงิน'].sum()
+            tm_transfer_in = df_dash[df_dash['หมวดหมู่'].str.contains('เข้า TrueMoney', na=False)]['จำนวนเงิน'].sum()
+            tm_transfer_out = df_dash[df_dash['หมวดหมู่'].str.contains('เข้ากรุงไทย', na=False)]['จำนวนเงิน'].sum()
+            tm_lend = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == '🤝 เงินทดจ่าย')]['จำนวนเงิน'].sum()
+            tm_refund = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย')]['จำนวนเงิน'].sum()
+            
+            tm_balance = tm_inc + tm_transfer_in + tm_refund - tm_exp - tm_transfer_out - tm_lend
+            kt_balance = net_in_cycle - tm_balance
+
+            # --- 💳 แถบสถานะแยกกระเป๋าเงิน (Multi-Wallet Bar) ---
+            st.markdown(f"""
+                <div style='display: flex; gap: 15px; margin-bottom: 15px;'>
+                    <div style='flex: 1; background-color: rgba(42, 157, 143, 0.1); border: 1px solid #2a9d8f; padding: 12px 18px; border-radius: 14px;'>
+                        <span style='font-size: 13px; opacity: 0.8;'>🏦 กรุงไทย (Krungthai)</span>
+                        <h3 style='margin: 0; color: #2a9d8f;'>฿{kt_balance:,.2f}</h3>
+                    </div>
+                    <div style='flex: 1; background-color: rgba(244, 162, 97, 0.15); border: 1px solid #f4a261; padding: 12px 18px; border-radius: 14px;'>
+                        <span style='font-size: 13px; opacity: 0.8;'>📱 TrueMoney Wallet</span>
+                        <h3 style='margin: 0; color: #f4a261;'>฿{tm_balance:,.2f}</h3>
+                    </div>
+                    <div style='flex: 1; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'>
+                        <span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินสดสุทธิ</span>
+                        <h3 style='margin: 0;'>฿{net_in_cycle:,.2f}</h3>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # --- ⚖️ ส่วนกระทบยอดบัญชีจริง ---
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
-                diff = net_in_cycle - selected_kt_real
+                diff = kt_balance - selected_kt_real
                 is_balanced = abs(diff) < 0.01
                 
                 with st.expander(f"⚖️ คาลิเบรทบัญชีกรุงไทยจริง (Bank Calibration): {'✅ ตรงกัน 100%' if is_balanced else f'⚠️ ส่วนต่าง ฿{diff:,.2f}'}", expanded=not is_balanced):
                     c_cal1, c_cal2, c_cal3, c_cal4 = st.columns([1.2, 1.2, 1.2, 2.2])
-                    c_cal1.markdown(f"**💰 เงินตั้งต้นรอบนี้ (ยอดยกมา)**<br><h4>฿{selected_carry:,.2f}</h4>", unsafe_allow_html=True)
+                    c_cal1.markdown(f"**💰 เงินตั้งต้นรอบนี้**<br><h4>฿{selected_carry:,.2f}</h4>", unsafe_allow_html=True)
                     c_cal2.markdown(f"**📥 รายรับรอบนี้**<br><h4 style='color:#2a9d8f;'>+฿{inc:,.2f}</h4>", unsafe_allow_html=True)
-                    c_cal3.markdown(f"**📱 Net Balance ในแอป**<br><h4>฿{net_in_cycle:,.2f}</h4>", unsafe_allow_html=True)
+                    c_cal3.markdown(f"**🏦 กรุงไทยในแอป**<br><h4>฿{kt_balance:,.2f}</h4>", unsafe_allow_html=True)
                     
                     with c_cal4:
                         with st.form("calibrate_bank_form", clear_on_submit=True):
-                            inp_carry = st.number_input(
-                                "💰 แก้ไขเงินตั้งต้นรอบนี้ (ยอดยกมาจริง)", 
-                                value=None, 
-                                placeholder=f"ปัจจุบัน: ฿{selected_carry:,.2f}", 
-                                step=100.0, 
-                                format="%.2f"
-                            )
-                            inp_kt = st.number_input(
-                                "🏦 เงินจริงในบัญชีกรุงไทย (ปัจจุบัน)", 
-                                value=None, 
-                                placeholder=f"ปัจจุบัน: ฿{selected_kt_real:,.2f}", 
-                                step=100.0, 
-                                format="%.2f"
-                            )
+                            inp_carry = st.number_input("💰 แก้ไขเงินตั้งต้นรอบนี้ (ยอดยกมาจริง)", value=None, placeholder=f"ปัจจุบัน: ฿{selected_carry:,.2f}", step=100.0, format="%.2f")
+                            inp_kt = st.number_input("🏦 เงินจริงในบัญชีกรุงไทย (ปัจจุบัน)", value=None, placeholder=f"ปัจจุบัน: ฿{selected_kt_real:,.2f}", step=100.0, format="%.2f")
                             
                             sub1, sub2 = st.columns(2)
                             with sub1:
@@ -500,20 +554,20 @@ else:
                                     
                             if sync_clean:
                                 if selected_row_idx:
-                                    flow_in_cycle = net_in_cycle - selected_carry
+                                    flow_in_cycle = kt_balance - selected_carry
                                     target_kt = inp_kt if inp_kt is not None else selected_kt_real
                                     new_carry = target_kt - flow_in_cycle
                                     cycle_sheet.update_cell(int(selected_row_idx), 5, float(new_carry))
                                     if inp_kt is not None:
                                         cycle_sheet.update_cell(int(selected_row_idx), 6, float(inp_kt))
                                     fetch_cycles.clear()
-                                    st.success(f"ล้างส่วนต่างอดีตเรียบร้อย! ปรับเงินตั้งต้นเป็น ฿{new_carry:,.2f} ทำให้ Net Balance เท่ากับธนาคารจริงเป๊ะ 100%")
+                                    st.success(f"ล้างส่วนต่างอดีตเรียบร้อย! ปรับเงินตั้งต้นเป็น ฿{new_carry:,.2f}")
                                     st.rerun()
                     
                     if not is_balanced:
-                        st.markdown(f"<div class='calib-box-diff'><b>💡 ข้อเสนอแนะ:</b> ขณะนี้ตัวเลขในแอป {'มากกว่า' if diff > 0 else 'น้อยกว่า'} เงินจริงในบัญชีกรุงไทยอยู่ <b>฿{abs(diff):,.2f}</b><br>หากต้องการให้เดือนนี้เริ่มต้นตรงกับธนาคารจริง ให้กดปุ่ม <b>'✂️ ล้างส่วนต่างเดือนก่อน'</b> ได้เลยครับ</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='calib-box-diff'><b>💡 ข้อเสนอแนะ:</b> ยอดในแอป {'มากกว่า' if diff > 0 else 'น้อยกว่า'} เงินจริงในกรุงไทยอยู่ <b>฿{abs(diff):,.2f}</b><br>สามารถกดปุ่ม <b>'✂️ ล้างส่วนต่างเดือนก่อน'</b> เพื่อให้ตรงกับธนาคารจริงทันทีครับ</div>", unsafe_allow_html=True)
                     else:
-                        st.markdown("<div class='calib-box-match'><b>🎉 ยอดเยี่ยมมากครับหมอ!</b> ยอดเงินคงเหลือใน Minimal Finance Pro ตรงกับเงินจริงในบัญชีกรุงไทยเป๊ะ 100% ครับ</div>", unsafe_allow_html=True)
+                        st.markdown("<div class='calib-box-match'><b>🎉 ยอดเยี่ยมมากครับหมอ!</b> ยอดกรุงไทยใน Minimal Finance Pro ตรงกับเงินจริงในธนาคารเป๊ะ 100% ครับ</div>", unsafe_allow_html=True)
 
             # --- กล่องสรุปตัวเลขหลัก (Metric Cards) ---
             m1, m2, m3, m4, m5 = st.columns(5)
@@ -528,11 +582,8 @@ else:
             
             st.markdown("---")
             
-            # --- 🔄 ส่วนควบคุมรอบบัญชี (Start / End Circle) ---
             with st.expander("🔄 เปิด Circle ใหม่ & สั่งตัดรอบบัญชี (Cycle Control)", expanded=False):
                 st.write(f"📌 รอบบัญชีที่กำลังใช้งานอยู่ตอนนี้คือ: **{active_cycle_name}**")
-                st.caption("💡 เมื่อกดเริ่ม Circle ใหม่ ระบบจะปิดรอบเดิมและนำ **'เงินจริงในธนาคารล่าสุด'** ที่หมอคาลิเบรทไว้ ยกยอดไปตั้งต้นใน Circle ใหม่ให้อัตโนมัติ (ตัดส่วนต่างอดีตทิ้ง 100%)")
-                
                 with st.form("new_cycle_form"):
                     new_circle_name = st.text_input("ชื่อ Circle ใหม่ที่จะเปิด (เช่น September 2026)", placeholder="ระบุชื่อรอบเดือนใหม่...")
                     if st.form_submit_button("⏹️ จบรอบปัจจุบัน & เริ่ม Circle ใหม่ทันที", use_container_width=True):
@@ -540,10 +591,10 @@ else:
                         if active_row_idx:
                             cycle_sheet.update_cell(int(active_row_idx), 3, now_timestamp)
                             cycle_sheet.update_cell(int(active_row_idx), 4, "CLOSED")
-                            cycle_sheet.update_cell(int(active_row_idx), 6, float(net_in_cycle))
+                            cycle_sheet.update_cell(int(active_row_idx), 6, float(kt_balance))
                         
                         final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
-                        start_carry = float(selected_kt_real) if selected_kt_real > 0 else float(net_in_cycle)
+                        start_carry = float(selected_kt_real) if selected_kt_real > 0 else float(kt_balance)
                         cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", start_carry, start_carry])
                         fetch_cycles.clear()
                         st.success(f"จบรอบเดิมและเริ่ม {final_name} พร้อมตั้งต้นด้วยยอดจริง ฿{start_carry:,.2f} เรียบร้อยครับ!")
@@ -686,16 +737,95 @@ else:
         else:
             st.info("No data available.")
 
+    # ==========================================
+    # 🤝 Tab 3: ลูกหนี้ & หารบิล (Receivables & Bill Split Tracker)
+    # ==========================================
     with tab3:
+        st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🤝 ระบบหารค่าใช้จ่าย & คนติดเงิน (Receivables Tracker)</p>", unsafe_allow_html=True)
+        st.caption("💡 สำหรับจดเวลาหารค่าข้าวกับแฟนหรือเพื่อน โดยระบบจะหักยอดเงินสดออกก่อน และคืนเข้า Net Balance เมื่อกดยืนยันว่าคืนเงินแล้ว (ไม่ปนกับรายจ่ายจริง)")
+        
+        debt_data = fetch_receivables()
+        df_debt = pd.DataFrame(debt_data) if debt_data else pd.DataFrame(columns=["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
+        
+        pending_df = df_debt[df_debt['สถานะ'] == '⏳ รอคืนเงิน'] if not df_debt.empty else pd.DataFrame()
+        paid_df = df_debt[df_debt['สถานะ'] == '✅ คืนแล้ว'] if not df_debt.empty else pd.DataFrame()
+        
+        total_pending = pd.to_numeric(pending_df['จำนวนเงิน'], errors='coerce').sum() if not pending_df.empty else 0.0
+        total_paid = pd.to_numeric(paid_df['จำนวนเงิน'], errors='coerce').sum() if not paid_df.empty else 0.0
+        
+        m_d1, m_d2 = st.columns(2)
+        m_d1.markdown(f"<div class='metric-card'><div class='metric-title'>⏳ ยอดเงินที่คนอื่นยังติดอยู่ (รอคืน)</div><div class='metric-value' style='color:#f9744b;'>฿{total_pending:,.2f}</div></div>", unsafe_allow_html=True)
+        m_d2.markdown(f"<div class='metric-card'><div class='metric-title'>✅ ได้รับคืนมาแล้วทั้งหมด</div><div class='metric-value' style='color:#2a9d8f;'>฿{total_paid:,.2f}</div></div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        c_add_debt, c_confirm_debt = st.columns([1.2, 1])
+        with c_add_debt:
+            with st.expander("➕ เพิ่มรายการคนติดเงิน / หารค่าข้าว (Add Receivable)", expanded=True):
+                with st.form("add_debt_form", clear_on_submit=True):
+                    d_who = st.text_input("ชื่อคนติดเงิน (เช่น แฟน, เพื่อน A)", placeholder="ระบุชื่อ...")
+                    d_desc = st.text_input("รายการ (เช่น หารค่าข้าวเย็น, ค่าชาบู)", placeholder="รายละเอียดบิล...")
+                    d_amt = st.number_input("จำนวนเงินที่เขาต้องจ่ายคืน (บาท)", min_value=1.0, step=10.0, format="%.2f", value=None, placeholder="0.00")
+                    d_wallet = st.selectbox("ทดจ่ายออกจากกระเป๋าไหน?", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"])
+                    
+                    if st.form_submit_button("💾 บันทึกคนติดเงิน (ตัดเงินทดจ่าย)", use_container_width=True) and d_amt is not None and d_amt > 0:
+                        new_id = len(df_debt) + 1
+                        now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # 1) บันทึกลงตารางลูกหนี้
+                        debt_sheet.append_row([new_id, d_who, d_desc, d_amt, d_wallet, now_str, "⏳ รอคืนเงิน", ""])
+                        # 2) บันทึกตัดเงินทดจ่ายในชีตหลัก (ลด Net Balance แต่ไม่กระทบ Expense)
+                        sheet.append_row([now_str, "🤝 เงินทดจ่าย", f"ลูกหนี้: {d_who}", d_amt, f"หารบิล: {d_desc}", d_wallet])
+                        
+                        fetch_receivables.clear()
+                        fetch_main_data.clear()
+                        st.toast("บันทึกรายการหารบิลและหักยอดทดจ่ายเรียบร้อย! ✨")
+                        st.rerun()
+
+        with c_confirm_debt:
+            with st.expander("🎉 ยืนยันรับคืนเงินแล้ว (Mark as Paid)", expanded=True):
+                if not pending_df.empty:
+                    pending_options = []
+                    for idx, r in pending_df.iterrows():
+                        pending_options.append((f"#{r['ID']} - {r['ชื่อคนติดเงิน']}: {r['รายการ/รายละเอียด']} (฿{r['จำนวนเงิน']})", idx + 2, r['จำนวนเงิน'], r['ชื่อคนติดเงิน'], r['กระเป๋าที่จ่าย']))
+                    
+                    selected_debt_label = st.selectbox("เลือกรายการที่ได้รับเงินคืนแล้ว:", [opt[0] for opt in pending_options])
+                    return_wallet = st.selectbox("รับเงินคืนเข้ากระเป๋าไหน?", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"], key="ret_wallet_select")
+                    
+                    if st.button("✅ ยืนยันว่าคืนเงินแล้ว (บวกกลับเข้า Net Balance)", use_container_width=True):
+                        for label, r_idx, d_val, d_name, _ in pending_options:
+                            if label == selected_debt_label:
+                                now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                                # 1) เปลี่ยนสถานะเป็นคืนแล้ว
+                                debt_sheet.update_cell(int(r_idx), 7, "✅ คืนแล้ว")
+                                debt_sheet.update_cell(int(r_idx), 8, now_str)
+                                # 2) เพิ่มรายการคืนเงินในชีตหลัก (บวกยอดเข้า Net Balance แต่ไม่บวก Income)
+                                sheet.append_row([now_str, "🤝 รับคืนเงินทดจ่าย", f"ลูกหนี้: {d_name}", float(d_val), "ได้รับคืนเงินที่ทดจ่ายไปก่อน", return_wallet])
+                                
+                                fetch_receivables.clear()
+                                fetch_main_data.clear()
+                                st.success("อัปเดตรับคืนเงินและเพิ่มยอดใน Net Balance เรียบร้อยครับ!")
+                                st.rerun()
+                else:
+                    st.info("ไม่มีรายการคนติดเงินค้างอยู่ตอนนี้ครับ 🎉")
+        
+        st.markdown("---")
+        st.markdown("<p class='quick-add-text'>📋 ตารางประวัติหารค่าใช้จ่ายและคนติดเงินทั้งหมด</p>", unsafe_allow_html=True)
+        if not df_debt.empty:
+            st.dataframe(df_debt, use_container_width=True, hide_index=True)
+        else:
+            st.info("ยังไม่มีประวัติคนติดเงินในระบบครับ")
+
+    with tab4:
         st.subheader("🎯 Goals")
         progress_percent = min(total_sav_now / 100000, 1.0)
         st.write("✈️ **GRE / Future Studies Fund**")
         st.progress(progress_percent)
         st.caption(f"Saved ฿{total_sav_now:,.2f} of ฿100,000.00 ({progress_percent*100:.1f}%)")
 
-    with tab4:
+    with tab5:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v24")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v25")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -705,7 +835,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v24")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v25")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -716,8 +846,8 @@ else:
         st.markdown("---")
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
-            clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v24")
+            clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]]
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v25")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
@@ -726,7 +856,7 @@ else:
                 st.success("Data updated!")
                 st.rerun()
 
-    with tab5:
+    with tab6:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🏦 เครื่องจำลองสินเชื่อระบบคลาวด์ถาวร (EMI Lock)</p>", unsafe_allow_html=True)
         st.caption("💡 ระบบผูกเข้ากับคลังเงินออมอัตโนมัติ ทุกการกู้หรือคืนเงินจะสะท้อนผลไปที่ Dashboard ทันที")
         
@@ -748,7 +878,7 @@ else:
                     loan_sheet.update_cell(2, 5, "")
                     
                     now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                    sheet.append_row([now_str, "กู้เงินออม", "บริหารเงินออม: กู้เงินออม", new_p, f"เปิดสัญญาเงินกู้ระบบจำลอง ฿{new_p:,.0f}"])
+                    sheet.append_row([now_str, "กู้เงินออม", "บริหารเงินออม: กู้เงินออม", new_p, f"เปิดสัญญาเงินกู้ระบบจำลอง ฿{new_p:,.0f}", "🏦 กรุงไทย"])
                     
                     fetch_loans.clear()
                     fetch_main_data.clear()
@@ -801,7 +931,7 @@ else:
                     loan_sheet.update_cell(2, 5, current_real_month)
                     
                     now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                    sheet.append_row([now_str, "คืนเงินกู้ออม", "บริหารเงินออม: คืนเงินกู้ออม", emi_amount, f"ชำระค่างวดสินเชื่อจำลอง งวดที่ {next_paid_count}/{db_months}"])
+                    sheet.append_row([now_str, "คืนเงินกู้ออม", "บริหารเงินออม: คืนเงินกู้ออม", emi_amount, f"ชำระค่างวดสินเชื่อจำลอง งวดที่ {next_paid_count}/{db_months}", "🏦 กรุงไทย"])
                     
                     fetch_loans.clear()
                     fetch_main_data.clear()
