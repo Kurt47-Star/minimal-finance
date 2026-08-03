@@ -145,7 +145,6 @@ def get_google_sheets():
         sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="8")
         sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
 
-    # 📌 สร้างชีต "Goals" สำหรับจัดเก็บและจัดการเป้าหมายออมเงิน
     try:
         sheet_goal = sh.worksheet("Goals")
     except:
@@ -247,6 +246,11 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
+# 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals) เตรียมไว้สำหรับ Slot Selector
+goals_data = fetch_goals()
+df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
+goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
+
 # คำนวณสรุปคลังเงินออมสะสมทั้งหมดล่วงหน้า
 sav_dep_global = df[df['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
 sav_withdrawn_global = df[df['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum() if not df.empty else 0
@@ -292,6 +296,8 @@ if app_mode == "📱 Mobile Mode":
     
     if "เงินออม" in type_entry:
         sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True)
+        selected_goal_mb = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", goal_options_list, key="mb_goal_slot")
+        
         st.markdown(f"""
             <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px;'>
                 <p style='margin:0; font-size: 13px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
@@ -299,7 +305,8 @@ if app_mode == "📱 Mobile Mode":
             </div>
         """, unsafe_allow_html=True)
         main_cat = "บริหารเงินออม"
-        sub_cat = sav_action.split(" ")[1]
+        action_name = sav_action.split(" ")[1]
+        sub_cat = f"{action_name} [{selected_goal_mb}]" if selected_goal_mb != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
     elif "โอนย้ายกระเป๋า" in type_entry:
         transfer_dir = st.radio("ทิศทางการโอน:", ["🏦 กรุงไทย ➡️ 📱 TrueMoney", "📱 TrueMoney ➡️ 🏦 กรุงไทย"], horizontal=True)
         main_cat = "โอนย้ายระหว่างกระเป๋า"
@@ -331,6 +338,18 @@ if app_mode == "📱 Mobile Mode":
                 if "เบิกออกมาใช้" in sav_action: final_type = "ถอนเงินออม"
                 elif "กู้เงินคลัง" in sav_action: final_type = "กู้เงินออม"
                 elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
+                
+                if selected_goal_mb != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" and not df_goals.empty:
+                    for g_idx, g_row in df_goals.iterrows():
+                        if str(g_row["ชื่อเป้าหมาย"]) == selected_goal_mb:
+                            curr_saved = float(g_row["สะสมแล้ว (บาท)"]) if pd.notnull(g_row["สะสมแล้ว (บาท)"]) else 0.0
+                            if final_type in ["เงินออม", "คืนเงินกู้ออม"]:
+                                new_saved = curr_saved + float(amount)
+                            else:
+                                new_saved = max(0.0, curr_saved - float(amount))
+                            goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
+                            fetch_goals.clear()
+                            break
             
             full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
             final_time = datetime.datetime.now(TZ_TH).time() if time_shortcut == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_str, datetime.datetime.now(TZ_TH).time())
@@ -372,6 +391,8 @@ else:
             
             if "เงินออม" in type_entry:
                 sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True, key="dt_sav_action")
+                selected_goal_dt = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", goal_options_list, key="dt_goal_slot")
+                
                 st.markdown(f"""
                     <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0;'>
                         <p style='margin:0; font-size: 14px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
@@ -379,7 +400,8 @@ else:
                     </div>
                 """, unsafe_allow_html=True)
                 main_cat = "บริหารเงินออม"
-                sub_cat = sav_action.split(" ")[1]
+                action_name = sav_action.split(" ")[1]
+                sub_cat = f"{action_name} [{selected_goal_dt}]" if selected_goal_dt != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
             elif "โอนย้ายกระเป๋า" in type_entry:
                 transfer_dir = st.radio("ทิศทางการโอน:", ["🏦 กรุงไทย ➡️ 📱 TrueMoney", "📱 TrueMoney ➡️ 🏦 กรุงไทย"], horizontal=True)
                 main_cat = "โอนย้ายระหว่างกระเป๋า"
@@ -414,6 +436,18 @@ else:
                         if "เบิกออกมาใช้" in sav_action: final_type = "ถอนเงินออม"
                         elif "กู้เงินคลัง" in sav_action: final_type = "กู้เงินออม"
                         elif "โอนคืนเงินกู้" in sav_action: final_type = "คืนเงินกู้ออม"
+                        
+                        if selected_goal_dt != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" and not df_goals.empty:
+                            for g_idx, g_row in df_goals.iterrows():
+                                if str(g_row["ชื่อเป้าหมาย"]) == selected_goal_dt:
+                                    curr_saved = float(g_row["สะสมแล้ว (บาท)"]) if pd.notnull(g_row["สะสมแล้ว (บาท)"]) else 0.0
+                                    if final_type in ["เงินออม", "คืนเงินกู้ออม"]:
+                                        new_saved = curr_saved + float(amount)
+                                    else:
+                                        new_saved = max(0.0, curr_saved - float(amount))
+                                    goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
+                                    fetch_goals.clear()
+                                    break
                         
                     full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
                     final_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut_dt == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_dt_str, datetime.datetime.now(TZ_TH).time())
@@ -495,7 +529,6 @@ else:
             lend_d = df_dash[df_dash['ประเภท'] == '🤝 เงินทดจ่าย']['จำนวนเงิน'].sum()
             refund_d = df_dash[df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย']['จำนวนเงิน'].sum()
 
-            # 🔥 สมการ Net Balance รวม: หักรายจ่าย เงินลงทุน เงินออม และลูกหนี้ครบถ้วน
             net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d - exp - inv - sav_dep_d - sav_repay_d - lend_d
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
@@ -820,14 +853,11 @@ else:
             st.info("ยังไม่มีประวัติคนติดเงินในระบบครับ")
 
     # ==========================================
-    # 🎯 Tab 4: Goals (ระบบออมเงินไดนามิก เพิ่ม/ลด/แก้ไขอิสระ)
+    # 🎯 Tab 4: Goals (อัปเกรดเลือกไอคอนแบบ Preset เมนูแนะนำ)
     # ==========================================
     with tab4:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🎯 ระบบจัดสรรเป้าหมายออมเงิน (Dynamic Goals)</p>", unsafe_allow_html=True)
         st.caption("💡 สำหรับแบ่งกระเป๋าเงินออมออกเป็นหลายๆ เป้าหมาย เช่น ค่าสอบ GRE, กองทุนเที่ยว, กองทุนฉุกเฉิน")
-        
-        goals_data = fetch_goals()
-        df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         
         total_allocated_sav = pd.to_numeric(df_goals["สะสมแล้ว (บาท)"], errors="coerce").sum() if not df_goals.empty else 0.0
         remaining_unallocated_sav = total_sav_now - total_allocated_sav
@@ -841,7 +871,6 @@ else:
         
         st.markdown("---")
         
-        # --- แสดง Progress Bar แต่ละเป้าหมาย ---
         if not df_goals.empty:
             for idx, row in df_goals.iterrows():
                 g_icon = str(row["ไอคอน"])
@@ -864,14 +893,35 @@ else:
         with c_goal_add:
             with st.expander("➕ เพิ่มเป้าหมายออมเงินใหม่ (Add New Goal)", expanded=True):
                 with st.form("add_goal_form", clear_on_submit=True):
-                    new_g_icon = st.text_input("ไอคอน (Emoji)", value="✈️", max_chars=3)
+                    # 💡 เมนูแนะนำไอคอนอัจฉริยะ (Curated Emoji Selector)
+                    icon_options = [
+                        "✈️ ท่องเที่ยว / เรียนต่อ", 
+                        "💻 คอมพิวเตอร์ / แกดเจ็ต", 
+                        "📱 สมาร์ทโฟน / แท็บเล็ต", 
+                        "🚗 รถยนต์ / ยานพาหนะ", 
+                        "🛵 มอเตอร์ไซค์", 
+                        "🏠 บ้าน / ที่พัก", 
+                        "💰 เงินสำรองฉุกเฉิน", 
+                        "🎮 เกม / ความบันเทิง", 
+                        "📚 หนังสือ / พัฒนาตัวเอง", 
+                        "🎁 ช้อปปิ้ง / ของขวัญ", 
+                        "🛡️ สุขภาพ / ประกัน", 
+                        "🐈 ค่าใช้จ่ายสัตว์เลี้ยง", 
+                        "🏋️ ฟิตเนส / กีฬา", 
+                        "🌟 เป้าหมายอื่นๆ"
+                    ]
+                    sel_icon_preset = st.selectbox("🎯 เลือกไอคอนแนะนำ:", icon_options)
+                    custom_icon_inp = st.text_input("💡 หรือพิมพ์ไอคอนเอง (ถ้าต้องการ):", placeholder="เช่น 🎸, 📷, ☕ (เว้นว่างไว้เพื่อใช้ตัวเลือกด้านบน)", max_chars=3)
+                    
                     new_g_name = st.text_input("ชื่อเป้าหมาย (เช่น GRE Fund, ซื้อ iPad)", placeholder="ระบุชื่อเป้าหมาย...")
                     new_g_target = st.number_input("จำนวนเงินเป้าหมาย (บาท)", min_value=100.0, step=1000.0, format="%.2f", value=None, placeholder="0.00")
                     new_g_saved = st.number_input("เงินออมเริ่มต้นในกระเป๋านี้ (บาท)", min_value=0.0, step=500.0, format="%.2f", value=0.0)
                     
                     if st.form_submit_button("💾 เพิ่มเป้าหมายลงระบบ", use_container_width=True):
                         if new_g_name.strip() and new_g_target is not None and new_g_target > 0:
-                            goal_sheet.append_row([new_g_icon, new_g_name, float(new_g_target), float(new_g_saved)])
+                            # 💡 ใช้ Custom Emoji ถ้าพิมพ์มา แต่ถ้าไม่พิมพ์ ให้ดึงตัวแรกสุดของเมนูแนะนำ
+                            final_icon = custom_icon_inp.strip() if custom_icon_inp.strip() else sel_icon_preset.split(" ")[0]
+                            goal_sheet.append_row([final_icon, new_g_name, float(new_g_target), float(new_g_saved)])
                             fetch_goals.clear()
                             st.success(f"เพิ่มเป้าหมาย '{new_g_name}' สำเร็จ! ✨")
                             st.rerun()
@@ -886,7 +936,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v27"
+                key="editor_goals_v29"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -901,7 +951,7 @@ else:
     # ==========================================
     with tab5:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v27")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v29")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -911,7 +961,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v27")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v29")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -923,7 +973,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v27")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v29")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
