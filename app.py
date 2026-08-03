@@ -87,13 +87,13 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมสร้างตาราง Receivables และรองรับ Multi-Wallet
+# 🚀 ระบบ Smart Cache พร้อมสร้างตาราง Goals, Receivables และรองรับ Multi-Wallet
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
         sh = client.open(spreadsheet_name)
     except Exception:
-        return None, None, None, None, None, None
+        return None, None, None, None, None, None, None
         
     sheet_main = sh.sheet1
     try:
@@ -144,10 +144,18 @@ def get_google_sheets():
     except:
         sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="8")
         sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
-        
-    return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt
 
-sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet, debt_sheet = get_google_sheets()
+    # 📌 สร้างชีต "Goals" สำหรับจัดเก็บและจัดการเป้าหมายออมเงิน
+    try:
+        sheet_goal = sh.worksheet("Goals")
+    except:
+        sheet_goal = sh.add_worksheet(title="Goals", rows="30", cols="5")
+        sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
+        sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
+        
+    return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal
+
+sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet, debt_sheet, goal_sheet = get_google_sheets()
 
 if sheet is None:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
@@ -177,6 +185,10 @@ def fetch_cycles():
 @st.cache_data(ttl=60)
 def fetch_receivables():
     return debt_sheet.get_all_records()
+
+@st.cache_data(ttl=60)
+def fetch_goals():
+    return goal_sheet.get_all_records()
 
 def parse_custom_time(time_str, default_time):
     try:
@@ -293,7 +305,6 @@ if app_mode == "📱 Mobile Mode":
         main_cat = "โอนย้ายระหว่างกระเป๋า"
         sub_cat = "เข้า TrueMoney" if "TrueMoney" in transfer_dir.split("➡️")[1] else "เข้ากรุงไทย"
     else:
-        # 💡 เรียงลำดับหมวดหมู่ตามตัวอักษร ก-ฮ (Sorted Alphabetically)
         main_options = sorted(list(SUB_CATEGORIES[type_entry].keys())) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
         main_cat = st.selectbox("Category", main_options, key="mb_main")
         sub_options = sorted(SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"])) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
@@ -376,7 +387,6 @@ else:
             else:
                 c_main, c_sub = st.columns(2)
                 with c_main:
-                    # 💡 เรียงลำดับหมวดหมู่ตามตัวอักษร ก-ฮ (Sorted Alphabetically)
                     main_options = sorted(list(SUB_CATEGORIES[type_entry].keys())) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
                     main_cat = st.selectbox("Category", main_options, key="dt_main")
                 with c_sub:
@@ -414,7 +424,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (อัปเกรดหักยอดเงินลงทุน & เงินออมครบทุกกระเป๋า 100%)
+    # 📊 Tab 2: Dashboard
     # ==========================================
     with tab2:
         if not df.empty:
@@ -473,26 +483,22 @@ else:
                             df_dash = df_dash[df_dash['วันที่'] >= start_dt]
                         break
 
-            # 💡 คำนวณรายรับ-รายจ่าย และเงินลงทุน (Inv)
             inc = df_dash[df_dash['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_dash[df_dash['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_dash[df_dash['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
             
-            # 💡 คำนวณเงินออมทั้ง 4 โหมด
             sav_dep_d = df_dash[df_dash['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum()
             sav_withdrawn_d = df_dash[df_dash['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum()
             sav_loan_d = df_dash[df_dash['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum()
             sav_repay_d = df_dash[df_dash['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum()
 
-            # 💡 เงินทดจ่ายให้คนอื่น (ลูกหนี้) และรับคืนเงินทดจ่าย
             lend_d = df_dash[df_dash['ประเภท'] == '🤝 เงินทดจ่าย']['จำนวนเงิน'].sum()
             refund_d = df_dash[df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย']['จำนวนเงิน'].sum()
 
-            # 🔥 หักลบเงินลงทุน (inv) และฝากเงินออม (sav_dep_d) ออกจาก Net Balance เรียบร้อย 100%
+            # 🔥 สมการ Net Balance รวม: หักรายจ่าย เงินลงทุน เงินออม และลูกหนี้ครบถ้วน
             net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d - exp - inv - sav_dep_d - sav_repay_d - lend_d
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
-            # 💡 คำนวณแยกยอดเงินใน TrueMoney Wallet ครอบคลุมทั้งเงินลงทุนและเงินออม
             tm_inc = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายรับ')]['จำนวนเงิน'].sum()
             tm_exp = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายจ่าย')]['จำนวนเงิน'].sum()
             tm_inv = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'เงินลงทุน')]['จำนวนเงิน'].sum()
@@ -508,7 +514,6 @@ else:
             tm_balance = tm_inc + tm_transfer_in + tm_refund + tm_sav_withdrawn + tm_sav_loan - tm_exp - tm_inv - tm_transfer_out - tm_lend - tm_sav_dep - tm_sav_repay
             kt_balance = net_in_cycle - tm_balance
 
-            # --- 💳 แถบสถานะแยกกระเป๋าเงิน (Multi-Wallet Bar) ---
             st.markdown(f"""
                 <div style='display: flex; gap: 15px; margin-bottom: 15px;'>
                     <div style='flex: 1; background-color: rgba(42, 157, 143, 0.1); border: 1px solid #2a9d8f; padding: 12px 18px; border-radius: 14px;'>
@@ -526,7 +531,6 @@ else:
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- ⚖️ ส่วนกระทบยอดบัญชีจริง ---
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 diff = kt_balance - selected_kt_real
                 is_balanced = abs(diff) < 0.01
@@ -575,7 +579,6 @@ else:
                     else:
                         st.markdown("<div class='calib-box-match'><b>🎉 ยอดเยี่ยมมากครับหมอ!</b> ยอดกรุงไทยใน Minimal Finance Pro ตรงกับเงินจริงในธนาคารเป๊ะ 100% ครับ</div>", unsafe_allow_html=True)
 
-            # --- กล่องสรุปตัวเลขหลัก (Metric Cards) ---
             m1, m2, m3, m4, m5 = st.columns(5)
             net_title_class = "metric-title" if net_in_cycle >= 0 else "metric-title-alert"
             m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Balance</div><div class='metric-value'>฿{net_in_cycle:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
@@ -608,7 +611,6 @@ else:
 
             st.markdown("---")
 
-            # --- 📈 ระบบกราฟแนวโน้มสไตล์หุ้น ---
             col_trend_title, col_trend_filter = st.columns([1.5, 2])
             with col_trend_title:
                 st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis (Stock Style)</p>", unsafe_allow_html=True)
@@ -689,7 +691,6 @@ else:
             
             st.markdown("---")
             
-            # --- ⭕ Infographic สัดส่วนรายจ่าย ---
             expense_df = df_dash[df_dash['ประเภท'] == 'รายจ่าย']
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
@@ -744,7 +745,7 @@ else:
             st.info("No data available.")
 
     # ==========================================
-    # 🤝 Tab 3: ลูกหนี้ & หารบิล (Receivables & Bill Split Tracker)
+    # 🤝 Tab 3: ลูกหนี้ & หารบิล
     # ==========================================
     with tab3:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🤝 ระบบหารค่าใช้จ่าย & คนติดเงิน (Receivables Tracker)</p>", unsafe_allow_html=True)
@@ -818,16 +819,89 @@ else:
         else:
             st.info("ยังไม่มีประวัติคนติดเงินในระบบครับ")
 
+    # ==========================================
+    # 🎯 Tab 4: Goals (ระบบออมเงินไดนามิก เพิ่ม/ลด/แก้ไขอิสระ)
+    # ==========================================
     with tab4:
-        st.subheader("🎯 Goals")
-        progress_percent = min(total_sav_now / 100000, 1.0)
-        st.write("✈️ **GRE / Future Studies Fund**")
-        st.progress(progress_percent)
-        st.caption(f"Saved ฿{total_sav_now:,.2f} of ฿100,000.00 ({progress_percent*100:.1f}%)")
+        st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🎯 ระบบจัดสรรเป้าหมายออมเงิน (Dynamic Goals)</p>", unsafe_allow_html=True)
+        st.caption("💡 สำหรับแบ่งกระเป๋าเงินออมออกเป็นหลายๆ เป้าหมาย เช่น ค่าสอบ GRE, กองทุนเที่ยว, กองทุนฉุกเฉิน")
+        
+        goals_data = fetch_goals()
+        df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
+        
+        total_allocated_sav = pd.to_numeric(df_goals["สะสมแล้ว (บาท)"], errors="coerce").sum() if not df_goals.empty else 0.0
+        remaining_unallocated_sav = total_sav_now - total_allocated_sav
 
+        g_m1, g_m2, g_m3 = st.columns(3)
+        g_m1.markdown(f"<div class='metric-card'><div class='metric-title'>💰 คลังเงินออมจริง (Savings Total)</div><div class='metric-value' style='color:#457b9d;'>฿{total_sav_now:,.2f}</div></div>", unsafe_allow_html=True)
+        g_m2.markdown(f"<div class='metric-card'><div class='metric-title'>📦 จัดสรรเข้าเป้าหมายแล้ว</div><div class='metric-value' style='color:#2a9d8f;'>฿{total_allocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
+        
+        rem_color = "#f9744b" if remaining_unallocated_sav < 0 else "#8ab17d"
+        g_m3.markdown(f"<div class='metric-card'><div class='metric-title'>⚖️ เงินออมที่ยังไม่จัดสรร</div><div class='metric-value' style='color:{rem_color};'>฿{remaining_unallocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # --- แสดง Progress Bar แต่ละเป้าหมาย ---
+        if not df_goals.empty:
+            for idx, row in df_goals.iterrows():
+                g_icon = str(row["ไอคอน"])
+                g_name = str(row["ชื่อเป้าหมาย"])
+                g_target = float(row["เป้าหมาย (บาท)"]) if pd.notnull(row["เป้าหมาย (บาท)"]) and float(row["เป้าหมาย (บาท)"]) > 0 else 1.0
+                g_saved = float(row["สะสมแล้ว (บาท)"]) if pd.notnull(row["สะสมแล้ว (บาท)"]) else 0.0
+                
+                pct = min(g_saved / g_target, 1.0)
+                pct_display = (g_saved / g_target) * 100
+                
+                st.markdown(f"**{g_icon} {g_name}** — `฿{g_saved:,.2f} / ฿{g_target:,.2f} ({pct_display:.1f}%)`")
+                st.progress(pct)
+                st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+        else:
+            st.info("ยังไม่มีเป้าหมายการออม ลองเพิ่มเป้าหมายแรกด้านล่างได้เลยครับ! ✨")
+
+        st.markdown("---")
+
+        c_goal_add, c_goal_edit = st.columns([1, 1.5])
+        with c_goal_add:
+            with st.expander("➕ เพิ่มเป้าหมายออมเงินใหม่ (Add New Goal)", expanded=True):
+                with st.form("add_goal_form", clear_on_submit=True):
+                    new_g_icon = st.text_input("ไอคอน (Emoji)", value="✈️", max_chars=3)
+                    new_g_name = st.text_input("ชื่อเป้าหมาย (เช่น GRE Fund, ซื้อ iPad)", placeholder="ระบุชื่อเป้าหมาย...")
+                    new_g_target = st.number_input("จำนวนเงินเป้าหมาย (บาท)", min_value=100.0, step=1000.0, format="%.2f", value=None, placeholder="0.00")
+                    new_g_saved = st.number_input("เงินออมเริ่มต้นในกระเป๋านี้ (บาท)", min_value=0.0, step=500.0, format="%.2f", value=0.0)
+                    
+                    if st.form_submit_button("💾 เพิ่มเป้าหมายลงระบบ", use_container_width=True):
+                        if new_g_name.strip() and new_g_target is not None and new_g_target > 0:
+                            goal_sheet.append_row([new_g_icon, new_g_name, float(new_g_target), float(new_g_saved)])
+                            fetch_goals.clear()
+                            st.success(f"เพิ่มเป้าหมาย '{new_g_name}' สำเร็จ! ✨")
+                            st.rerun()
+                        else:
+                            st.warning("กรุณาระบุชื่อเป้าหมายและจำนวนเงินให้ถูกต้องครับ")
+
+        with c_goal_edit:
+            st.markdown("### ✏️ ตารางแก้ไข / ลบเป้าหมายการออม")
+            st.caption("💡 สามารถคลิกเปลี่ยนชื่อ ปรับตัวเลข หรือ **'เลือกแถวแล้วกดปุ่ม Delete บนคีย์บอร์ด'** เพื่อลบเป้าหมายออกได้ทันทีครับ")
+            
+            edited_goals = st.data_editor(
+                df_goals, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                key="editor_goals_v27"
+            )
+            
+            if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
+                goal_sheet.clear()
+                goal_sheet.update(range_name="A1", values=[edited_goals.columns.values.tolist()] + edited_goals.values.tolist())
+                fetch_goals.clear()
+                st.success("อัปเดตรายการเป้าหมายออมเงินเรียบร้อย! ✨")
+                st.rerun()
+
+    # ==========================================
+    # ⚙️ Tab 5: Settings (Categories, QuickAdds & Raw Data)
+    # ==========================================
     with tab5:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v26")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v27")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -837,7 +911,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v26")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v27")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -849,7 +923,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v26")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v27")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
@@ -858,6 +932,9 @@ else:
                 st.success("Data updated!")
                 st.rerun()
 
+    # ==========================================
+    # 🏦 Tab 6: Loan Simulator
+    # ==========================================
     with tab6:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🏦 เครื่องจำลองสินเชื่อระบบคลาวด์ถาวร (EMI Lock)</p>", unsafe_allow_html=True)
         st.caption("💡 ระบบผูกเข้ากับคลังเงินออมอัตโนมัติ ทุกการกู้หรือคืนเงินจะสะท้อนผลไปที่ Dashboard ทันที")
