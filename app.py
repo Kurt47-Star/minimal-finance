@@ -139,11 +139,10 @@ def get_google_sheets():
         sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-08-01 22:34:23", "CLOSED", 0.0, 2501.0])
         sheet_cycle.append_row(["August 2026", "2026-08-01 22:34:24", "", "ACTIVE", 2501.0, 2501.0])
 
-    # 📌 สร้างชีต "Receivables" สำหรับระบบลูกหนี้และหารค่าข้าว
     try:
         sheet_debt = sh.worksheet("Receivables")
     except:
-        sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="7")
+        sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="8")
         sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt
@@ -276,7 +275,6 @@ if app_mode == "📱 Mobile Mode":
     st.markdown("---")
     st.markdown("<p class='quick-add-text'>New Transaction</p>", unsafe_allow_html=True)
     
-    # 💡 เพิ่มโหมด TrueMoney Wallet และการโอนย้ายกระเป๋าในเมนูมือถือ
     type_entry = st.selectbox("Type", ["💸 รายจ่าย", "📥 รายรับ", "🔄 โอนย้ายกระเป๋า", "🐷 เงินออม", "📈 เงินลงทุน"])
     wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet)", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"])
     
@@ -295,9 +293,10 @@ if app_mode == "📱 Mobile Mode":
         main_cat = "โอนย้ายระหว่างกระเป๋า"
         sub_cat = "เข้า TrueMoney" if "TrueMoney" in transfer_dir.split("➡️")[1] else "เข้ากรุงไทย"
     else:
-        main_options = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
+        # 💡 เรียงลำดับหมวดหมู่ตามตัวอักษร ก-ฮ (Sorted Alphabetically)
+        main_options = sorted(list(SUB_CATEGORIES[type_entry].keys())) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
         main_cat = st.selectbox("Category", main_options, key="mb_main")
-        sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
+        sub_options = sorted(SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"])) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
         sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
     
     c_md1, c_mt1 = st.columns(2)
@@ -377,10 +376,11 @@ else:
             else:
                 c_main, c_sub = st.columns(2)
                 with c_main:
-                    main_options = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
+                    # 💡 เรียงลำดับหมวดหมู่ตามตัวอักษร ก-ฮ (Sorted Alphabetically)
+                    main_options = sorted(list(SUB_CATEGORIES[type_entry].keys())) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
                     main_cat = st.selectbox("Category", main_options, key="dt_main")
                 with c_sub:
-                    sub_options = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
+                    sub_options = sorted(SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"])) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
                     sub_cat = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
             c_date_tool, c_time_tool = st.columns([1, 1])
@@ -414,7 +414,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ระบบแยกยอด กรุงไทย + TrueMoney Wallet)
+    # 📊 Tab 2: Dashboard (อัปเกรดหักยอดเงินลงทุน & เงินออมครบทุกกระเป๋า 100%)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -473,11 +473,12 @@ else:
                             df_dash = df_dash[df_dash['วันที่'] >= start_dt]
                         break
 
-            # คำนวณรายรับ-รายจ่ายหลัก
+            # 💡 คำนวณรายรับ-รายจ่าย และเงินลงทุน (Inv)
             inc = df_dash[df_dash['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_dash[df_dash['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_dash[df_dash['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
             
+            # 💡 คำนวณเงินออมทั้ง 4 โหมด
             sav_dep_d = df_dash[df_dash['ประเภท'] == 'เงินออม']['จำนวนเงิน'].sum()
             sav_withdrawn_d = df_dash[df_dash['ประเภท'] == 'ถอนเงินออม']['จำนวนเงิน'].sum()
             sav_loan_d = df_dash[df_dash['ประเภท'] == 'กู้เงินออม']['จำนวนเงิน'].sum()
@@ -487,19 +488,24 @@ else:
             lend_d = df_dash[df_dash['ประเภท'] == '🤝 เงินทดจ่าย']['จำนวนเงิน'].sum()
             refund_d = df_dash[df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย']['จำนวนเงิน'].sum()
 
-            # 💡 Net Balance รวมทั้ง 2 กระเป๋า (การโอนย้ายภายในไม่กระทบยอดนี้)
-            net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d - exp - sav_dep_d - sav_repay_d - lend_d
+            # 🔥 หักลบเงินลงทุน (inv) และฝากเงินออม (sav_dep_d) ออกจาก Net Balance เรียบร้อย 100%
+            net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d - exp - inv - sav_dep_d - sav_repay_d - lend_d
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
-            # 💡 คำนวณแยกยอดเงินใน TrueMoney Wallet และ กรุงไทย
+            # 💡 คำนวณแยกยอดเงินใน TrueMoney Wallet ครอบคลุมทั้งเงินลงทุนและเงินออม
             tm_inc = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายรับ')]['จำนวนเงิน'].sum()
             tm_exp = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายจ่าย')]['จำนวนเงิน'].sum()
+            tm_inv = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'เงินลงทุน')]['จำนวนเงิน'].sum()
             tm_transfer_in = df_dash[df_dash['หมวดหมู่'].str.contains('เข้า TrueMoney', na=False)]['จำนวนเงิน'].sum()
             tm_transfer_out = df_dash[df_dash['หมวดหมู่'].str.contains('เข้ากรุงไทย', na=False)]['จำนวนเงิน'].sum()
             tm_lend = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == '🤝 เงินทดจ่าย')]['จำนวนเงิน'].sum()
             tm_refund = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย')]['จำนวนเงิน'].sum()
+            tm_sav_dep = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'เงินออม')]['จำนวนเงิน'].sum()
+            tm_sav_withdrawn = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'ถอนเงินออม')]['จำนวนเงิน'].sum()
+            tm_sav_loan = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'กู้เงินออม')]['จำนวนเงิน'].sum()
+            tm_sav_repay = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'คืนเงินกู้ออม')]['จำนวนเงิน'].sum()
             
-            tm_balance = tm_inc + tm_transfer_in + tm_refund - tm_exp - tm_transfer_out - tm_lend
+            tm_balance = tm_inc + tm_transfer_in + tm_refund + tm_sav_withdrawn + tm_sav_loan - tm_exp - tm_inv - tm_transfer_out - tm_lend - tm_sav_dep - tm_sav_repay
             kt_balance = net_in_cycle - tm_balance
 
             # --- 💳 แถบสถานะแยกกระเป๋าเงิน (Multi-Wallet Bar) ---
@@ -772,9 +778,7 @@ else:
                         new_id = len(df_debt) + 1
                         now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
                         
-                        # 1) บันทึกลงตารางลูกหนี้
                         debt_sheet.append_row([new_id, d_who, d_desc, d_amt, d_wallet, now_str, "⏳ รอคืนเงิน", ""])
-                        # 2) บันทึกตัดเงินทดจ่ายในชีตหลัก (ลด Net Balance แต่ไม่กระทบ Expense)
                         sheet.append_row([now_str, "🤝 เงินทดจ่าย", f"ลูกหนี้: {d_who}", d_amt, f"หารบิล: {d_desc}", d_wallet])
                         
                         fetch_receivables.clear()
@@ -796,10 +800,8 @@ else:
                         for label, r_idx, d_val, d_name, _ in pending_options:
                             if label == selected_debt_label:
                                 now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                                # 1) เปลี่ยนสถานะเป็นคืนแล้ว
                                 debt_sheet.update_cell(int(r_idx), 7, "✅ คืนแล้ว")
                                 debt_sheet.update_cell(int(r_idx), 8, now_str)
-                                # 2) เพิ่มรายการคืนเงินในชีตหลัก (บวกยอดเข้า Net Balance แต่ไม่บวก Income)
                                 sheet.append_row([now_str, "🤝 รับคืนเงินทดจ่าย", f"ลูกหนี้: {d_name}", float(d_val), "ได้รับคืนเงินที่ทดจ่ายไปก่อน", return_wallet])
                                 
                                 fetch_receivables.clear()
@@ -825,7 +827,7 @@ else:
 
     with tab5:
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v25")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v26")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -835,7 +837,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v25")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v26")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -847,7 +849,7 @@ else:
         st.subheader("✏️ Raw Data Editor")
         if not df.empty:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v25")
+            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v26")
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
