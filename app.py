@@ -87,13 +87,13 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมสร้างตาราง Goals, Receivables และรองรับ Multi-Wallet
+# 🚀 ระบบ Smart Cache พร้อมสร้างตาราง Wallets, Goals, Receivables
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
         sh = client.open(spreadsheet_name)
     except Exception:
-        return None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None
         
     sheet_main = sh.sheet1
     try:
@@ -151,10 +151,18 @@ def get_google_sheets():
         sheet_goal = sh.add_worksheet(title="Goals", rows="30", cols="5")
         sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
-        
-    return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal
 
-sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet, debt_sheet, goal_sheet = get_google_sheets()
+    try:
+        sheet_wallet = sh.worksheet("Wallets")
+    except:
+        sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
+        sheet_wallet.append_row(["ชื่อกระเป๋า"])
+        sheet_wallet.append_row(["🏦 กรุงไทย"])
+        sheet_wallet.append_row(["📱 TrueMoney Wallet"])
+        
+    return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
+
+sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet, debt_sheet, goal_sheet, wallet_sheet = get_google_sheets()
 
 if sheet is None:
     st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
@@ -188,6 +196,10 @@ def fetch_receivables():
 @st.cache_data(ttl=60)
 def fetch_goals():
     return goal_sheet.get_all_records()
+
+@st.cache_data(ttl=60)
+def fetch_wallets():
+    return wallet_sheet.get_all_records()
 
 def parse_custom_time(time_str, default_time):
     try:
@@ -246,7 +258,14 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals) เตรียมไว้สำหรับ Slot Selector
+# 📌 โหลดข้อมูล Wallets (ธนาคารและกระเป๋าเงิน)
+wallets_data = fetch_wallets()
+df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
+wallet_list = [str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() if pd.notnull(w) and str(w).strip() != ""]
+if not wallet_list:
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet"]
+
+# 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
 goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
@@ -283,7 +302,8 @@ if app_mode == "📱 Mobile Mode":
         for i, row in qa_df.iterrows():
             if st.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"mb_qa_{i}"):
                 now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", "🏦 กรุงไทย"])
+                default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
+                sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", default_wallet])
                 fetch_main_data.clear()
                 st.toast("Success! ✨")
                 st.rerun()
@@ -292,30 +312,37 @@ if app_mode == "📱 Mobile Mode":
     st.markdown("<p class='quick-add-text'>New Transaction</p>", unsafe_allow_html=True)
     
     type_entry = st.selectbox("Type", ["💸 รายจ่าย", "📥 รายรับ", "🔄 โอนย้ายกระเป๋า", "🐷 เงินออม", "📈 เงินลงทุน"])
-    wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet)", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"])
     
-    if "เงินออม" in type_entry:
-        sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True)
-        selected_goal_mb = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", goal_options_list, key="mb_goal_slot")
-        
-        st.markdown(f"""
-            <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px;'>
-                <p style='margin:0; font-size: 13px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
-                {"<p style='margin:0; font-size:13px; color:#f9744b;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
-            </div>
-        """, unsafe_allow_html=True)
-        main_cat = "บริหารเงินออม"
-        action_name = sav_action.split(" ")[1]
-        sub_cat = f"{action_name} [{selected_goal_mb}]" if selected_goal_mb != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
-    elif "โอนย้ายกระเป๋า" in type_entry:
-        transfer_dir = st.radio("ทิศทางการโอน:", ["🏦 กรุงไทย ➡️ 📱 TrueMoney", "📱 TrueMoney ➡️ 🏦 กรุงไทย"], horizontal=True)
+    if "โอนย้ายกระเป๋า" in type_entry:
+        c_tr1, c_tr2 = st.columns(2)
+        with c_tr1:
+            from_wallet = st.selectbox("โอนออกจาก (From):", wallet_list, key="mb_tr_from")
+        with c_tr2:
+            to_options = [w for w in wallet_list if w != from_wallet] if len(wallet_list) > 1 else wallet_list
+            to_wallet = st.selectbox("เข้ากระเป๋า (To):", to_options, key="mb_tr_to")
+        wallet_entry = from_wallet
         main_cat = "โอนย้ายระหว่างกระเป๋า"
-        sub_cat = "เข้า TrueMoney" if "TrueMoney" in transfer_dir.split("➡️")[1] else "เข้ากรุงไทย"
+        sub_cat = f"เข้า {to_wallet}"
     else:
-        main_options = sorted(list(SUB_CATEGORIES[type_entry].keys())) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
-        main_cat = st.selectbox("Category", main_options, key="mb_main")
-        sub_options = sorted(SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"])) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
-        sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
+        wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet)", wallet_list, key="mb_wallet_select")
+        if "เงินออม" in type_entry:
+            sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True)
+            selected_goal_mb = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", goal_options_list, key="mb_goal_slot")
+            
+            st.markdown(f"""
+                <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px;'>
+                    <p style='margin:0; font-size: 13px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
+                    {"<p style='margin:0; font-size:13px; color:#f9744b;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
+                </div>
+            """, unsafe_allow_html=True)
+            main_cat = "บริหารเงินออม"
+            action_name = sav_action.split(" ")[1]
+            sub_cat = f"{action_name} [{selected_goal_mb}]" if selected_goal_mb != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
+        else:
+            main_options = sorted(list(SUB_CATEGORIES[type_entry].keys())) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
+            main_cat = st.selectbox("Category", main_options, key="mb_main")
+            sub_options = sorted(SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"])) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
+            sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
     
     c_md1, c_mt1 = st.columns(2)
     with c_md1:
@@ -375,7 +402,8 @@ else:
                     col = cols[i % 4]
                     if col.button(str(row['ชื่อปุ่ม']), use_container_width=True, key=f"dt_qa_{i}"):
                         now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                        sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", "🏦 กรุงไทย"])
+                        default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
+                        sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", default_wallet])
                         fetch_main_data.clear()
                         st.toast("Success! ✨")
                         st.rerun()
@@ -387,9 +415,20 @@ else:
             with c_type:
                 type_entry = st.radio("Type", ["📥 รายรับ", "💸 รายจ่าย", "🔄 โอนย้ายกระเป๋า", "🐷 เงินออม", "📈 เงินลงทุน"], horizontal=True, label_visibility="collapsed")
             with c_wallet:
-                wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet):", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"], label_visibility="collapsed")
+                if "โอนย้ายกระเป๋า" not in type_entry:
+                    wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet):", wallet_list, label_visibility="collapsed", key="dt_wallet_select")
             
-            if "เงินออม" in type_entry:
+            if "โอนย้ายกระเป๋า" in type_entry:
+                c_tf1, c_tf2 = st.columns(2)
+                with c_tf1:
+                    from_wallet = st.selectbox("โอนออกจากกระเป๋า (From):", wallet_list, key="dt_tr_from")
+                with c_tf2:
+                    to_options = [w for w in wallet_list if w != from_wallet] if len(wallet_list) > 1 else wallet_list
+                    to_wallet = st.selectbox("โอนเข้ากระเป๋า (To):", to_options, key="dt_tr_to")
+                wallet_entry = from_wallet
+                main_cat = "โอนย้ายระหว่างกระเป๋า"
+                sub_cat = f"เข้า {to_wallet}"
+            elif "เงินออม" in type_entry:
                 sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True, key="dt_sav_action")
                 selected_goal_dt = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", goal_options_list, key="dt_goal_slot")
                 
@@ -402,10 +441,6 @@ else:
                 main_cat = "บริหารเงินออม"
                 action_name = sav_action.split(" ")[1]
                 sub_cat = f"{action_name} [{selected_goal_dt}]" if selected_goal_dt != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
-            elif "โอนย้ายกระเป๋า" in type_entry:
-                transfer_dir = st.radio("ทิศทางการโอน:", ["🏦 กรุงไทย ➡️ 📱 TrueMoney", "📱 TrueMoney ➡️ 🏦 กรุงไทย"], horizontal=True)
-                main_cat = "โอนย้ายระหว่างกระเป๋า"
-                sub_cat = "เข้า TrueMoney" if "TrueMoney" in transfer_dir.split("➡️")[1] else "เข้ากรุงไทย"
             else:
                 c_main, c_sub = st.columns(2)
                 with c_main:
@@ -532,52 +567,67 @@ else:
             net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d - exp - inv - sav_dep_d - sav_repay_d - lend_d
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
-            tm_inc = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายรับ')]['จำนวนเงิน'].sum()
-            tm_exp = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'รายจ่าย')]['จำนวนเงิน'].sum()
-            tm_inv = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'เงินลงทุน')]['จำนวนเงิน'].sum()
-            tm_transfer_in = df_dash[df_dash['หมวดหมู่'].str.contains('เข้า TrueMoney', na=False)]['จำนวนเงิน'].sum()
-            tm_transfer_out = df_dash[df_dash['หมวดหมู่'].str.contains('เข้ากรุงไทย', na=False)]['จำนวนเงิน'].sum()
-            tm_lend = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == '🤝 เงินทดจ่าย')]['จำนวนเงิน'].sum()
-            tm_refund = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย')]['จำนวนเงิน'].sum()
-            tm_sav_dep = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'เงินออม')]['จำนวนเงิน'].sum()
-            tm_sav_withdrawn = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'ถอนเงินออม')]['จำนวนเงิน'].sum()
-            tm_sav_loan = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'กู้เงินออม')]['จำนวนเงิน'].sum()
-            tm_sav_repay = df_dash[(df_dash['กระเป๋า'] == '📱 TrueMoney Wallet') & (df_dash['ประเภท'] == 'คืนเงินกู้ออม')]['จำนวนเงิน'].sum()
-            
-            tm_balance = tm_inc + tm_transfer_in + tm_refund + tm_sav_withdrawn + tm_sav_loan - tm_exp - tm_inv - tm_transfer_out - tm_lend - tm_sav_dep - tm_sav_repay
-            kt_balance = net_in_cycle - tm_balance
+            def is_transfer_in(cat_str, w_name):
+                c = str(cat_str)
+                if w_name in c: return True
+                if "กรุงไทย" in w_name and "กรุงไทย" in c: return True
+                if "TrueMoney" in w_name and "TrueMoney" in c: return True
+                return False
 
-            st.markdown(f"""
-                <div style='display: flex; gap: 15px; margin-bottom: 15px;'>
-                    <div style='flex: 1; background-color: rgba(42, 157, 143, 0.1); border: 1px solid #2a9d8f; padding: 12px 18px; border-radius: 14px;'>
-                        <span style='font-size: 13px; opacity: 0.8;'>🏦 กรุงไทย (Krungthai)</span>
-                        <h3 style='margin: 0; color: #2a9d8f;'>฿{kt_balance:,.2f}</h3>
-                    </div>
-                    <div style='flex: 1; background-color: rgba(244, 162, 97, 0.15); border: 1px solid #f4a261; padding: 12px 18px; border-radius: 14px;'>
-                        <span style='font-size: 13px; opacity: 0.8;'>📱 TrueMoney Wallet</span>
-                        <h3 style='margin: 0; color: #f4a261;'>฿{tm_balance:,.2f}</h3>
-                    </div>
-                    <div style='flex: 1; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'>
-                        <span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินสดสุทธิ</span>
-                        <h3 style='margin: 0;'>฿{net_in_cycle:,.2f}</h3>
-                    </div>
+            wallet_balances = {}
+            in_types = ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', '🤝 รับคืนเงินทดจ่าย']
+            out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '🔄 โอนย้ายกระเป๋า']
+            
+            for w in wallet_list:
+                df_w = df_dash[df_dash['กระเป๋า'] == w]
+                w_in = df_w[df_w['ประเภท'].isin(in_types)]['จำนวนเงิน'].sum()
+                w_out = df_w[df_w['ประเภท'].isin(out_types)]['จำนวนเงิน'].sum()
+                
+                trans_in_df = df_dash[df_dash['ประเภท'] == '🔄 โอนย้ายกระเป๋า']
+                w_trans_in = trans_in_df[trans_in_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w))]['จำนวนเงิน'].sum()
+                
+                wallet_balances[w] = w_in + w_trans_in - w_out
+                
+            if len(wallet_list) > 0:
+                other_sum = sum(wallet_balances[w] for w in wallet_list[1:])
+                wallet_balances[wallet_list[0]] = net_in_cycle - other_sum
+
+            card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
+            cards_html = ""
+            for idx, w in enumerate(wallet_list):
+                c = card_colors[idx % len(card_colors)]
+                bal = wallet_balances[w]
+                cards_html += f"""
+                <div style='flex: 1; min-width: 170px; background-color: {c}18; border: 1px solid {c}; padding: 12px 18px; border-radius: 14px;'>
+                    <span style='font-size: 13px; opacity: 0.8;'>{w}</span>
+                    <h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3>
                 </div>
-            """, unsafe_allow_html=True)
+                """
+            cards_html += f"""
+            <div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'>
+                <span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินสดสุทธิ</span>
+                <h3 style='margin: 0;'>฿{net_in_cycle:,.2f}</h3>
+            </div>
+            """
+            st.markdown(f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>", unsafe_allow_html=True)
+
+            primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
+            primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
-                diff = kt_balance - selected_kt_real
+                diff = primary_wallet_bal - selected_kt_real
                 is_balanced = abs(diff) < 0.01
                 
-                with st.expander(f"⚖️ คาลิเบรทบัญชีกรุงไทยจริง (Bank Calibration): {'✅ ตรงกัน 100%' if is_balanced else f'⚠️ ส่วนต่าง ฿{diff:,.2f}'}", expanded=not is_balanced):
+                with st.expander(f"⚖️ คาลิเบรทบัญชีจริง [{primary_wallet_name}] (Bank Calibration): {'✅ ตรงกัน 100%' if is_balanced else f'⚠️ ส่วนต่าง ฿{diff:,.2f}'}", expanded=not is_balanced):
                     c_cal1, c_cal2, c_cal3, c_cal4 = st.columns([1.2, 1.2, 1.2, 2.2])
                     c_cal1.markdown(f"**💰 เงินตั้งต้นรอบนี้**<br><h4>฿{selected_carry:,.2f}</h4>", unsafe_allow_html=True)
                     c_cal2.markdown(f"**📥 รายรับรอบนี้**<br><h4 style='color:#2a9d8f;'>+฿{inc:,.2f}</h4>", unsafe_allow_html=True)
-                    c_cal3.markdown(f"**🏦 กรุงไทยในแอป**<br><h4>฿{kt_balance:,.2f}</h4>", unsafe_allow_html=True)
+                    c_cal3.markdown(f"**🏦 ยอดในแอป**<br><h4>฿{primary_wallet_bal:,.2f}</h4>", unsafe_allow_html=True)
                     
                     with c_cal4:
                         with st.form("calibrate_bank_form", clear_on_submit=True):
                             inp_carry = st.number_input("💰 แก้ไขเงินตั้งต้นรอบนี้ (ยอดยกมาจริง)", value=None, placeholder=f"ปัจจุบัน: ฿{selected_carry:,.2f}", step=100.0, format="%.2f")
-                            inp_kt = st.number_input("🏦 เงินจริงในบัญชีกรุงไทย (ปัจจุบัน)", value=None, placeholder=f"ปัจจุบัน: ฿{selected_kt_real:,.2f}", step=100.0, format="%.2f")
+                            inp_kt = st.number_input(f"🏦 เงินจริงใน {primary_wallet_name} (ปัจจุบัน)", value=None, placeholder=f"ปัจจุบัน: ฿{selected_kt_real:,.2f}", step=100.0, format="%.2f")
                             
                             sub1, sub2 = st.columns(2)
                             with sub1:
@@ -597,7 +647,7 @@ else:
                                     
                             if sync_clean:
                                 if selected_row_idx:
-                                    flow_in_cycle = kt_balance - selected_carry
+                                    flow_in_cycle = primary_wallet_bal - selected_carry
                                     target_kt = inp_kt if inp_kt is not None else selected_kt_real
                                     new_carry = target_kt - flow_in_cycle
                                     cycle_sheet.update_cell(int(selected_row_idx), 5, float(new_carry))
@@ -608,9 +658,9 @@ else:
                                     st.rerun()
                     
                     if not is_balanced:
-                        st.markdown(f"<div class='calib-box-diff'><b>💡 ข้อเสนอแนะ:</b> ยอดในแอป {'มากกว่า' if diff > 0 else 'น้อยกว่า'} เงินจริงในกรุงไทยอยู่ <b>฿{abs(diff):,.2f}</b><br>สามารถกดปุ่ม <b>'✂️ ล้างส่วนต่างเดือนก่อน'</b> เพื่อให้ตรงกับธนาคารจริงทันทีครับ</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='calib-box-diff'><b>💡 ข้อเสนอแนะ:</b> ยอดในแอป {'มากกว่า' if diff > 0 else 'น้อยกว่า'} เงินจริงใน {primary_wallet_name} อยู่ <b>฿{abs(diff):,.2f}</b><br>สามารถกดปุ่ม <b>'✂️ ล้างส่วนต่างเดือนก่อน'</b> เพื่อให้ตรงกับธนาคารจริงทันทีครับ</div>", unsafe_allow_html=True)
                     else:
-                        st.markdown("<div class='calib-box-match'><b>🎉 ยอดเยี่ยมมากครับหมอ!</b> ยอดกรุงไทยใน Minimal Finance Pro ตรงกับเงินจริงในธนาคารเป๊ะ 100% ครับ</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='calib-box-match'><b>🎉 ยอดเยี่ยมมากครับหมอ!</b> ยอดเงินใน Minimal Finance Pro ตรงกับธนาคารจริงเป๊ะ 100% ครับ</div>", unsafe_allow_html=True)
 
             m1, m2, m3, m4, m5 = st.columns(5)
             net_title_class = "metric-title" if net_in_cycle >= 0 else "metric-title-alert"
@@ -633,10 +683,10 @@ else:
                         if active_row_idx:
                             cycle_sheet.update_cell(int(active_row_idx), 3, now_timestamp)
                             cycle_sheet.update_cell(int(active_row_idx), 4, "CLOSED")
-                            cycle_sheet.update_cell(int(active_row_idx), 6, float(kt_balance))
+                            cycle_sheet.update_cell(int(active_row_idx), 6, float(primary_wallet_bal))
                         
                         final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
-                        start_carry = float(selected_kt_real) if selected_kt_real > 0 else float(kt_balance)
+                        start_carry = float(selected_kt_real) if selected_kt_real > 0 else float(primary_wallet_bal)
                         cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", start_carry, start_carry])
                         fetch_cycles.clear()
                         st.success(f"จบรอบเดิมและเริ่ม {final_name} พร้อมตั้งต้นด้วยยอดจริง ฿{start_carry:,.2f} เรียบร้อยครับ!")
@@ -806,7 +856,7 @@ else:
                     d_who = st.text_input("ชื่อคนติดเงิน (เช่น แฟน, เพื่อน A)", placeholder="ระบุชื่อ...")
                     d_desc = st.text_input("รายการ (เช่น หารค่าข้าวเย็น, ค่าชาบู)", placeholder="รายละเอียดบิล...")
                     d_amt = st.number_input("จำนวนเงินที่เขาต้องจ่ายคืน (บาท)", min_value=1.0, step=10.0, format="%.2f", value=None, placeholder="0.00")
-                    d_wallet = st.selectbox("ทดจ่ายออกจากกระเป๋าไหน?", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"])
+                    d_wallet = st.selectbox("ทดจ่ายออกจากกระเป๋าไหน?", wallet_list)
                     
                     if st.form_submit_button("💾 บันทึกคนติดเงิน (ตัดเงินทดจ่าย)", use_container_width=True) and d_amt is not None and d_amt > 0:
                         new_id = len(df_debt) + 1
@@ -828,7 +878,7 @@ else:
                         pending_options.append((f"#{r['ID']} - {r['ชื่อคนติดเงิน']}: {r['รายการ/รายละเอียด']} (฿{r['จำนวนเงิน']})", idx + 2, r['จำนวนเงิน'], r['ชื่อคนติดเงิน'], r['กระเป๋าที่จ่าย']))
                     
                     selected_debt_label = st.selectbox("เลือกรายการที่ได้รับเงินคืนแล้ว:", [opt[0] for opt in pending_options])
-                    return_wallet = st.selectbox("รับเงินคืนเข้ากระเป๋าไหน?", ["🏦 กรุงไทย", "📱 TrueMoney Wallet"], key="ret_wallet_select")
+                    return_wallet = st.selectbox("รับเงินคืนเข้ากระเป๋าไหน?", wallet_list, key="ret_wallet_select")
                     
                     if st.button("✅ ยืนยันว่าคืนเงินแล้ว (บวกกลับเข้า Net Balance)", use_container_width=True):
                         for label, r_idx, d_val, d_name, _ in pending_options:
@@ -853,7 +903,7 @@ else:
             st.info("ยังไม่มีประวัติคนติดเงินในระบบครับ")
 
     # ==========================================
-    # 🎯 Tab 4: Goals (พิมพ์ชื่อพร้อมไอคอนในช่องเดียว)
+    # 🎯 Tab 4: Goals
     # ==========================================
     with tab4:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🎯 ระบบจัดสรรเป้าหมายออมเงิน (Dynamic Goals)</p>", unsafe_allow_html=True)
@@ -894,7 +944,6 @@ else:
         with c_goal_add:
             with st.expander("➕ เพิ่มเป้าหมายออมเงินใหม่ (Add New Goal)", expanded=True):
                 with st.form("add_goal_form", clear_on_submit=True):
-                    # 💡 พิมพ์ไอคอน Emoji รวมเข้ากับชื่อเป้าหมายได้เลยในช่องเดียว
                     new_g_name = st.text_input("ชื่อเป้าหมาย (เช่น ✈️ GRE Fund, 💻 ซื้อ iPad)", placeholder="พิมพ์ชื่อเป้าหมายพร้อมไอคอนได้เลย...")
                     new_g_target = st.number_input("จำนวนเงินเป้าหมาย (บาท)", min_value=100.0, step=1000.0, format="%.2f", value=None, placeholder="0.00")
                     new_g_saved = st.number_input("เงินออมเริ่มต้นในกระเป๋านี้ (บาท)", min_value=0.0, step=500.0, format="%.2f", value=0.0)
@@ -916,7 +965,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v30"
+                key="editor_goals_v32"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -927,11 +976,41 @@ else:
                 st.rerun()
 
     # ==========================================
-    # ⚙️ Tab 5: Settings (Categories, QuickAdds & Raw Data)
+    # ⚙️ Tab 5: Settings (Wallets, Categories, QuickAdds & Raw Data)
     # ==========================================
     with tab5:
+        st.subheader("💳 Wallets Editor (จัดการกระเป๋าเงิน / ธนาคาร)")
+        st.caption("💡 สามารถกด **➕ เพิ่มแถวเพื่อเพิ่มธนาคารใหม่** (เช่น 💜 SCB, 💚 KBank, 💵 เงินสด) หรือเลือกแถวแล้วกด Delete เพื่อลบออกได้เลยครับ")
+        
+        c_w_edit, c_w_add = st.columns([1.5, 1])
+        with c_w_edit:
+            edited_wallets = st.data_editor(
+                df_wallets, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                key="editor_wallets_v32"
+            )
+            if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
+                wallet_sheet.clear()
+                wallet_sheet.update(range_name="A1", values=[["ชื่อกระเป๋า"]] + edited_wallets.values.tolist())
+                fetch_wallets.clear()
+                st.success("อัปเดตรายชื่อธนาคารและกระเป๋าเงินเรียบร้อย! ✨")
+                st.rerun()
+                
+        with c_w_add:
+            with st.form("add_wallet_quick_form", clear_on_submit=True):
+                st.markdown("**➕ เพิ่มธนาคารด่วน**")
+                new_w_name = st.text_input("ชื่อธนาคาร / กระเป๋าเงิน", placeholder="เช่น 💚 KBank กสิกร, 💵 เงินสด")
+                if st.form_submit_button("เพิ่มเข้าแอปทันที", use_container_width=True):
+                    if new_w_name.strip():
+                        wallet_sheet.append_row([new_w_name.strip()])
+                        fetch_wallets.clear()
+                        st.toast(f"เพิ่ม '{new_w_name}' เรียบร้อย! ✨")
+                        st.rerun()
+
+        st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v30")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v32")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -941,7 +1020,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v30")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v32")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -950,10 +1029,58 @@ else:
             st.rerun()
             
         st.markdown("---")
-        st.subheader("✏️ Raw Data Editor")
+        # 🔥 อัปเกรด Raw Data Editor: เพิ่ม Smart Explorer ค้นหา/กรอง พร้อมตัวคูณคอลัมน์และเรียงล่าสุดขึ้นบนสุด!
+        st.subheader("✏️ Raw Data Editor & Explorer (จัดการและค้นหาข้อมูลดิบ)")
+        
         if not df.empty:
-            clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]]
-            edited_df = st.data_editor(clean_df_edit, use_container_width=True, num_rows="dynamic", key="editor_finance_v30")
+            with st.expander("🔍 โหมดค้นหาและกรองดูข้อมูล (Smart Data Explorer - เช็คยอดง่าย)", expanded=True):
+                s_col1, s_col2, s_col3 = st.columns([1.5, 1, 1])
+                with s_col1:
+                    search_txt = st.text_input("🔎 ค้นหาคำในรายละเอียด / หมวดหมู่:", placeholder="เช่น 7-11, ชาบู, ค่าไฟ...")
+                with s_col2:
+                    filter_type = st.selectbox("📌 กรองประเภท:", ["ทั้งหมด"] + sorted(list(df["ประเภท"].unique())))
+                with s_col3:
+                    filter_wallet = st.selectbox("💳 กรองกระเป๋า:", ["ทั้งหมด"] + wallet_list)
+                
+                df_explored = df.copy()
+                if search_txt.strip():
+                    df_explored = df_explored[df_explored["รายละเอียด"].astype(str).str.contains(search_txt, case=False, na=False) | df_explored["หมวดหมู่"].astype(str).str.contains(search_txt, case=False, na=False)]
+                if filter_type != "ทั้งหมด":
+                    df_explored = df_explored[df_explored["ประเภท"] == filter_type]
+                if filter_wallet != "ทั้งหมด":
+                    df_explored = df_explored[df_explored["กระเป๋า"] == filter_wallet]
+                
+                df_explored = df_explored.sort_values(by="วันที่", ascending=False)
+                total_rows_exp = len(df_explored)
+                total_sum_exp = df_explored["จำนวนเงิน"].sum()
+                
+                st.markdown(f"**💡 พบข้อมูลทั้งหมด `{total_rows_exp}` รายการ | รวมเป็นเงิน `฿{total_sum_exp:,.2f}`**")
+                st.dataframe(
+                    df_explored[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]],
+                    use_container_width=True,
+                    hide_index=True
+                )
+            
+            st.markdown("#### 🛠️ ตารางแก้ไขข้อมูลดิบ (Full Editor - บันทึกลงคลาวด์)")
+            st.caption("💡 รายการล่าสุดอยู่แถวบนสุดเสมอ | คอลัมน์ 'ประเภท' และ 'กระเป๋า' เป็นเมนูดรอปดาวน์คลิกเลือกได้เลยครับ")
+            
+            clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]].copy()
+            clean_df_edit = clean_df_edit.sort_values(by="วันที่", ascending=False)
+            
+            type_options_all = ["รายรับ", "รายจ่าย", "เงินออม", "ถอนเงินออม", "กู้เงินออม", "คืนเงินกู้ออม", "เงินลงทุน", "🔄 โอนย้ายกระเป๋า", "🤝 เงินทดจ่าย", "🤝 รับคืนเงินทดจ่าย"]
+            
+            edited_df = st.data_editor(
+                clean_df_edit, 
+                use_container_width=True, 
+                num_rows="dynamic",
+                column_config={
+                    "จำนวนเงิน": st.column_config.NumberColumn("จำนวนเงิน (THB)", format="฿ %.2f", step=10.0),
+                    "ประเภท": st.column_config.SelectboxColumn("ประเภท", options=type_options_all, required=True),
+                    "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
+                    "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
+                },
+                key="editor_finance_v32"
+            )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
                 edited_df['วันที่'] = edited_df['วันที่'].astype(str)
@@ -987,7 +1114,8 @@ else:
                     loan_sheet.update_cell(2, 5, "")
                     
                     now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                    sheet.append_row([now_str, "กู้เงินออม", "บริหารเงินออม: กู้เงินออม", new_p, f"เปิดสัญญาเงินกู้ระบบจำลอง ฿{new_p:,.0f}", "🏦 กรุงไทย"])
+                    default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
+                    sheet.append_row([now_str, "กู้เงินออม", "บริหารเงินออม: กู้เงินออม", new_p, f"เปิดสัญญาเงินกู้ระบบจำลอง ฿{new_p:,.0f}", default_wallet])
                     
                     fetch_loans.clear()
                     fetch_main_data.clear()
@@ -1040,7 +1168,8 @@ else:
                     loan_sheet.update_cell(2, 5, current_real_month)
                     
                     now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                    sheet.append_row([now_str, "คืนเงินกู้ออม", "บริหารเงินออม: คืนเงินกู้ออม", emi_amount, f"ชำระค่างวดสินเชื่อจำลอง งวดที่ {next_paid_count}/{db_months}", "🏦 กรุงไทย"])
+                    default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
+                    sheet.append_row([now_str, "คืนเงินกู้ออม", "บริหารเงินออม: คืนเงินกู้ออม", emi_amount, f"ชำระค่างวดสินเชื่อจำลอง งวดที่ {next_paid_count}/{db_months}", default_wallet])
                     
                     fetch_loans.clear()
                     fetch_main_data.clear()
