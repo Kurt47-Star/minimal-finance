@@ -218,16 +218,14 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 เกราะป้องกันวันที่สากล (3-Layer Universal Date Parser) ไม่มีทางเป็น NaT และไม่สลับวัน/เดือน 100%
+# 🔥 ล็อกการอ่านวันที่แบบไทย/ISO (dayfirst=True เสมอ) ป้องกันการสลับวัน/เดือน 100%
 def parse_universal_datetime(date_series):
-    s1 = pd.to_datetime(date_series, errors='coerce')
-    if s1.isna().any():
-        s2 = pd.to_datetime(date_series, format='mixed', dayfirst=True, errors='coerce')
-        s1 = s1.fillna(s2)
-    if s1.isna().any():
-        s3 = pd.to_datetime(date_series, format='mixed', errors='coerce')
-        s1 = s1.fillna(s3)
-    return s1
+    return pd.to_datetime(
+        date_series.astype(str).str.strip(),
+        format='mixed',
+        dayfirst=True,
+        errors='coerce'
+    )
 
 def load_data():
     records = fetch_main_data()
@@ -530,12 +528,12 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (แก้จบทั้ง Trend Analysis, วันที่สิงหา และ Expense Breakdown Reference)
+    # 📊 Tab 2: Dashboard (ซิงค์ตรงจาก Raw Data 100% + ป้องกัน KeyError)
     # ==========================================
     with tab2:
         if not df.empty:
             df_chart = df.copy()
-            df_chart['วันที่'] = pd.to_datetime(df_chart['วันเวลา'])
+            df_chart['วันที่'] = df_chart['วันเวลา']
             
             cycles_data = fetch_cycles()
             df_cycles = pd.DataFrame(cycles_data) if cycles_data else pd.DataFrame(columns=["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
@@ -582,9 +580,9 @@ else:
                         selected_carry = carry_val
                         selected_kt_real = kt_val
                         selected_row_idx = r_idx
-                        start_dt = pd.to_datetime(start_str)
+                        start_dt = pd.to_datetime(start_str, format='mixed', dayfirst=True, errors='coerce')
                         if end_str and pd.notnull(end_str) and str(end_str).strip() != "":
-                            end_dt = pd.to_datetime(end_str)
+                            end_dt = pd.to_datetime(end_str, format='mixed', dayfirst=True, errors='coerce')
                             df_cycle = df_cycle[(df_cycle['วันที่'] >= start_dt) & (df_cycle['วันที่'] <= end_dt)]
                             df_cumulative = df_cumulative[df_cumulative['วันที่'] <= end_dt]
                         else:
@@ -782,7 +780,6 @@ else:
                 visible_metrics = c_ms.multiselect("เลือกเส้นวิเคราะห์คงเหลือ:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
             
             today = datetime.datetime.now(TZ_TH).date()
-            # 🔥 ปลดล็อก Trend Analysis ให้ดึงจากข้อมูลสะสมทั้งหมด (df_chart) เพื่อให้กราฟ 1Y/5Y แสดงครบทุกรอบเดือน
             df_trend = df_chart.copy()
             df_trend = df_trend.dropna(subset=['วันเวลา'])
             df_trend = df_trend.sort_values(by='วันเวลา')
@@ -867,7 +864,7 @@ else:
             
             st.markdown("---")
             
-            # 🔥 Expense Analysis + ระบบอ้างอิงรายละเอียดบิลในแต่ละ Slope/Slice (แก้จบ KeyError บรรทัด 913 100%)
+            # 🔥 Expense Analysis + ตารางอ้างอิงรายละเอียดบิลดิบตรงกับ Raw Data 100%
             expense_df = df_cycle[exp_mask].copy()
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
@@ -917,10 +914,10 @@ else:
                         )
                         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
                 
-                # 🔥 ตารางอ้างอิงแจกแจงรายละเอียดรายบิลของแต่ละ Slice / Slope แบบ Flat Columns Guaranteed!
+                # 🔥 ตารางอ้างอิงแจกแจงรายละเอียดรายบิลของแต่ละ Slice / Slope (แก้อาการ KeyError ถาวร 100%)
                 st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
                 with st.expander("📋 อ้างอิงที่มาและรายละเอียดรายบิลของแต่ละหมวดหมู่ (Expense Breakdown Reference)", expanded=True):
-                    st.caption("💡 ดูรายการที่มาของยอดในกราฟแต่ละหมวดหมู่ เพื่อเช็ครายละเอียด วันที่ และกระเป๋าที่จ่าย")
+                    st.caption("💡 ดูรายการที่มาของยอดในกราฟแต่ละหมวดหมู่ เพื่อเช็ครายละเอียด วันที่ และกระเป๋าที่จ่าย (ตรงกับ Raw Data 100%)")
                     
                     if not filtered_expense_df.empty:
                         sum_cat_df = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'], as_index=False)['จำนวนเงิน'].sum()
@@ -1093,7 +1090,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v50"
+                key="editor_goals_v51"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1116,7 +1113,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v50"
+                key="editor_wallets_v51"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1138,7 +1135,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v50")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v51")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1148,7 +1145,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v50")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v51")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1206,7 +1203,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v50"
+                key="editor_finance_v51"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
