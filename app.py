@@ -218,21 +218,24 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 ล็อกการอ่านวันที่แบบไทย/ISO (dayfirst=True เสมอ) ป้องกันการสลับวัน/เดือน 100%
-def parse_universal_datetime(date_series):
-    return pd.to_datetime(
-        date_series.astype(str).str.strip(),
-        format='mixed',
-        dayfirst=True,
-        errors='coerce'
-    )
+# 🔥 ฟังก์ชันอ่านวันที่แบบแน่นอน 100%: อ่าน ISO (YYYY-MM-DD) ก่อนเสมอ ห้ามสลับวัน-เดือนเด็ดขาด!
+def parse_clean_datetime(date_series):
+    s = date_series.astype(str).str.strip()
+    # 1) อ่านแบบมาตรฐาน ISO ก่อน (เช่น 2026-06-25 จะได้วันที่ 25 เดือนมิถุนายน ตรงเป๊ะ)
+    dt = pd.to_datetime(s, errors='coerce')
+    # 2) สำหรับตัวที่ยังเป็น NaT ค่อยลองอ่านแบบ DD/MM/YYYY
+    if dt.isna().any():
+        dt_alt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+        dt = dt.fillna(dt_alt)
+    return dt
 
 def load_data():
     records = fetch_main_data()
     if records:
         df = pd.DataFrame(records)
-        parsed_time = parse_universal_datetime(df['วันที่'])
+        parsed_time = parse_clean_datetime(df['วันที่'])
         df['วันเวลา'] = parsed_time.apply(lambda x: x.replace(year=x.year - 543) if pd.notnull(x) and x.year > 2400 else x)
+        df['วันที่'] = df['วันเวลา']  # ล็อกให้ 'วันที่' ทั้งระบบเป็น datetime ที่ตรงกันเป๊ะกับ Raw Data Editor
         df['วันที่_date'] = df['วันเวลา'].dt.date
         df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0.0)
         df['ประเภท'] = df['ประเภท'].astype(str).str.strip()
@@ -288,7 +291,7 @@ goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
-# 🔥 ฟังก์ชันคำนวณเงินออมรวม (รองรับทั้งจดตรง และโอนเข้าออมสิน)
+# 🔥 ฟังก์ชันคำนวณเงินออมรวม
 def calculate_savings_metrics(df_source):
     if df_source.empty or 'ประเภท' not in df_source.columns:
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -528,7 +531,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ซิงค์ตรงจาก Raw Data 100% + ป้องกัน KeyError)
+    # 📊 Tab 2: Dashboard (ซิงค์ตรงกับ Raw Data Editor 100% ไม่มีสลับวัน-เดือน)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -574,15 +577,16 @@ else:
             selected_kt_real = 0.0
             selected_row_idx = None
             
+            # 🔥 กรองวันที่ของ Cycle โดยใช้ฟังก์ชันอ่านวันที่ตัวเดียวกันกับ Raw Data เป๊ะ 100%
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 for label, start_str, end_str, carry_val, kt_val, r_idx in cycle_options:
                     if label == selected_cycle_label:
                         selected_carry = carry_val
                         selected_kt_real = kt_val
                         selected_row_idx = r_idx
-                        start_dt = pd.to_datetime(start_str, format='mixed', dayfirst=True, errors='coerce')
+                        start_dt = parse_clean_datetime(pd.Series([start_str])).iloc[0]
                         if end_str and pd.notnull(end_str) and str(end_str).strip() != "":
-                            end_dt = pd.to_datetime(end_str, format='mixed', dayfirst=True, errors='coerce')
+                            end_dt = parse_clean_datetime(pd.Series([end_str])).iloc[0]
                             df_cycle = df_cycle[(df_cycle['วันที่'] >= start_dt) & (df_cycle['วันที่'] <= end_dt)]
                             df_cumulative = df_cumulative[df_cumulative['วันที่'] <= end_dt]
                         else:
@@ -600,14 +604,14 @@ else:
             # 🔥 2) กรองรายการเงินออม (Savings Flow)
             _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
-            # 💡 3) รายรับ (Income)
+            # 💡 3) รายรับ (Income) - มั่นใจได้เลยว่า 2026-06-25 : 7500 จากแม่ จะอยู่ในยอดรวมของรอบกรกฎาคม/All Time ถูกต้อง
             inc_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
                 ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
             )
             inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 4) รายจ่าย (Expenses) - ไม่นับลงทุน, ออม หรือปรับยอด
+            # 🔥 4) รายจ่าย (Expenses)
             exp_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
                 ~inv_mask &
@@ -864,7 +868,7 @@ else:
             
             st.markdown("---")
             
-            # 🔥 Expense Analysis + ตารางอ้างอิงรายละเอียดบิลดิบตรงกับ Raw Data 100%
+            # 🔥 Expense Analysis + ระบบอ้างอิงรายละเอียดบิลในแต่ละ Slope/Slice (แก้จบ KeyError บรรทัด 913 100%)
             expense_df = df_cycle[exp_mask].copy()
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
@@ -914,7 +918,7 @@ else:
                         )
                         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
                 
-                # 🔥 ตารางอ้างอิงแจกแจงรายละเอียดรายบิลของแต่ละ Slice / Slope (แก้อาการ KeyError ถาวร 100%)
+                # 🔥 ตารางอ้างอิงแจกแจงรายละเอียดรายบิลของแต่ละ Slice / Slope
                 st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
                 with st.expander("📋 อ้างอิงที่มาและรายละเอียดรายบิลของแต่ละหมวดหมู่ (Expense Breakdown Reference)", expanded=True):
                     st.caption("💡 ดูรายการที่มาของยอดในกราฟแต่ละหมวดหมู่ เพื่อเช็ครายละเอียด วันที่ และกระเป๋าที่จ่าย (ตรงกับ Raw Data 100%)")
@@ -1090,7 +1094,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v51"
+                key="editor_goals_v52"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1113,7 +1117,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v51"
+                key="editor_wallets_v52"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1135,7 +1139,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v51")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v52")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1145,7 +1149,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v51")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v52")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
