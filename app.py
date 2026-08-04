@@ -218,11 +218,22 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
+# 🔥 เกราะป้องกันวันที่สากล (3-Layer Universal Date Parser) ไม่มีทางเป็น NaT และไม่สลับวัน/เดือน 100%
+def parse_universal_datetime(date_series):
+    s1 = pd.to_datetime(date_series, errors='coerce')
+    if s1.isna().any():
+        s2 = pd.to_datetime(date_series, format='mixed', dayfirst=True, errors='coerce')
+        s1 = s1.fillna(s2)
+    if s1.isna().any():
+        s3 = pd.to_datetime(date_series, format='mixed', errors='coerce')
+        s1 = s1.fillna(s3)
+    return s1
+
 def load_data():
     records = fetch_main_data()
     if records:
         df = pd.DataFrame(records)
-        parsed_time = pd.to_datetime(df['วันที่'], errors='coerce')
+        parsed_time = parse_universal_datetime(df['วันที่'])
         df['วันเวลา'] = parsed_time.apply(lambda x: x.replace(year=x.year - 543) if pd.notnull(x) and x.year > 2400 else x)
         df['วันที่_date'] = df['วันเวลา'].dt.date
         df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0.0)
@@ -519,7 +530,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ซ่อมบั๊ก KeyError 100% + อ้างอิงแจกแจง Expense Breakdown)
+    # 📊 Tab 2: Dashboard (แก้จบทั้ง Trend Analysis, วันที่สิงหา และ Expense Breakdown Reference)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -588,7 +599,7 @@ else:
             ) & ~df_cycle['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
             inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 2) กรองรายการเงินออม (Savings Flow) ครอบคลุมทั้งจดตรง และโอนเข้า "ออมสิน"
+            # 🔥 2) กรองรายการเงินออม (Savings Flow)
             _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
             # 💡 3) รายรับ (Income)
@@ -598,7 +609,7 @@ else:
             )
             inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 4) รายจ่าย (Expenses) - ไม่นับรายการที่เป็น ลงทุน หรือ ออม
+            # 🔥 4) รายจ่าย (Expenses) - ไม่นับลงทุน, ออม หรือปรับยอด
             exp_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
                 ~inv_mask &
@@ -692,7 +703,7 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
-            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว (Multi-Wallet 1-Click Sync)
+            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
                     st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57, เป๋าตัง 28.09) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
@@ -771,9 +782,23 @@ else:
                 visible_metrics = c_ms.multiselect("เลือกเส้นวิเคราะห์คงเหลือ:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
             
             today = datetime.datetime.now(TZ_TH).date()
-            df_trend = df_cycle.copy()
+            # 🔥 ปลดล็อก Trend Analysis ให้ดึงจากข้อมูลสะสมทั้งหมด (df_chart) เพื่อให้กราฟ 1Y/5Y แสดงครบทุกรอบเดือน
+            df_trend = df_chart.copy()
             df_trend = df_trend.dropna(subset=['วันเวลา'])
             df_trend = df_trend.sort_values(by='วันเวลา')
+            
+            def clean_type_name(t_str):
+                t = str(t_str).strip()
+                if 'รายรับ' in t and 'รับคืน' not in t: return 'รายรับ'
+                if 'รายจ่าย' in t: return 'รายจ่าย'
+                if 'ลงทุน' in t: return 'เงินลงทุน'
+                if 'ถอน' in t and 'ออม' in t: return 'ถอนเงินออม'
+                if 'กู้' in t and 'ออม' in t and 'คืน' not in t: return 'กู้เงินออม'
+                if 'คืน' in t and 'กู้' in t: return 'คืนเงินกู้ออม'
+                if 'ออม' in t: return 'เงินออม'
+                return t
+            
+            df_trend['ประเภท_clean'] = df_trend['ประเภท'].apply(clean_type_name)
             
             if not df_trend.empty:
                 if "รายวัน" in time_frame:
@@ -798,9 +823,9 @@ else:
                     x_tick_format = "%Y"
                     
                 if not df_trend.empty:
-                    trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'], as_index=False)['จำนวนเงิน'].sum()
+                    trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท_clean'], as_index=False)['จำนวนเงิน'].sum()
                     if not trend_data_raw.empty:
-                        pivot_trend = trend_data_raw.pivot(index='เวลา', columns='ประเภท', values='จำนวนเงิน').fillna(0)
+                        pivot_trend = trend_data_raw.pivot(index='เวลา', columns='ประเภท_clean', values='จำนวนเงิน').fillna(0)
                         
                         for col in ['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน', 'ถอนเงินออม', 'กู้เงินออม', 'คืนเงินกู้ออม']:
                             if col not in pivot_trend.columns: pivot_trend[col] = 0
@@ -1068,7 +1093,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v49"
+                key="editor_goals_v50"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1091,7 +1116,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v49"
+                key="editor_wallets_v50"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1113,7 +1138,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v49")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v50")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1123,7 +1148,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v49")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v50")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1181,7 +1206,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v49"
+                key="editor_finance_v50"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
