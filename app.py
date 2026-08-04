@@ -502,7 +502,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (แก้จบ KeyError + ผูกออมสิน = คลังออม + TrueMoney = 77.35)
+    # 📊 Tab 2: Dashboard (ผ่าตัดตรรกะ: ถอด'โอนย้ายกระเป๋า'ออกจากรายการจ่ายออก -> TrueMoney = 77.35 เป๊ะ!)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -563,6 +563,7 @@ else:
                             df_cycle = df_cycle[df_cycle['วันที่'] >= start_dt]
                         break
 
+            # 💡 คำนวณรายรับ-รายจ่ายของรอบเดือนที่เลือก (Monthly Flow)
             inc = df_cycle[df_cycle['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_cycle[df_cycle['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_cycle[df_cycle['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
@@ -583,7 +584,6 @@ else:
                 if "เป๋าตัง" in w and "เป๋าตัง" in c: return True
                 return False
 
-            # 🔥 ฟังก์ชันหาเงินโอนเข้าปลอดภัย 100% ป้องกัน KeyError
             def get_transfer_in_sum(df_source, w_name):
                 if df_source.empty:
                     return 0.0
@@ -593,7 +593,6 @@ else:
                 mask = trans_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w_name)).astype(bool)
                 return trans_df[mask]['จำนวนเงิน'].sum()
 
-            # 🔥 ฟังก์ชันหาเงินโอนออกปลอดภัย 100% ป้องกัน KeyError บรรทัด 615
             def get_transfer_out_sum(df_source, w_name):
                 if df_source.empty:
                     return 0.0
@@ -603,9 +602,10 @@ else:
                 mask = ((trans_df['กระเป๋า'] == w_name) & (~trans_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w_name)))).astype(bool)
                 return trans_df[mask]['จำนวนเงิน'].sum()
 
+            # 🔥 ถอดคำว่า '🔄 โอนย้ายกระเป๋า' ออกจาก out_types เพื่อป้องกันการหักเงินซ้ำซ้อน!
             wallet_balances = {}
             in_types = ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', '🤝 รับคืนเงินทดจ่าย', '⚖️ ปรับยอดเพิ่ม']
-            out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '🔄 โอนย้ายกระเป๋า', '⚖️ ปรับยอดลด']
+            out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '⚖️ ปรับยอดลด']
             
             for w in wallet_list:
                 if "ออมสิน" in w:
@@ -979,7 +979,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v39"
+                key="editor_goals_v40"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1002,7 +1002,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v39"
+                key="editor_wallets_v40"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1024,7 +1024,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v39")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v40")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1034,7 +1034,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v39")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v40")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1092,7 +1092,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v39"
+                key="editor_finance_v40"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
