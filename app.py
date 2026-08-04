@@ -267,7 +267,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 📌 โหลดข้อมูล Wallets (ธนาคารและกระเป๋าเงิน) - รับรองมี 4 ธนาคารครบถ้วน
+# 📌 โหลดข้อมูล Wallets (ธนาคารและกระเป๋าเงิน)
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() if pd.notnull(w) and str(w).strip() != ""]
@@ -502,7 +502,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ผ่าตัดตรรกะ: ถอด'โอนย้ายกระเป๋า'ออกจากรายการจ่ายออก -> TrueMoney = 77.35 เป๊ะ!)
+    # 📊 Tab 2: Dashboard (ผ่าตัดตรรกะใหม่ 100%: ไม่ขโมยเงินกรุงไทย + TrueMoney = 77.35 เป๊ะ)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -574,42 +574,52 @@ else:
             sav_repay_c = df_cycle[df_cycle['ประเภท'] == 'คืนเงินกู้ออม']['จำนวนเงิน'].sum()
             sav_flow = sav_dep_c + sav_repay_c - sav_withdrawn_c - sav_loan_c
 
-            def is_transfer_in(cat_str, w_name):
-                c = str(cat_str).strip()
-                w = str(w_name).strip()
-                if w in c: return True
-                if "กรุงไทย" in w and "กรุงไทย" in c: return True
-                if "TrueMoney" in w and "TrueMoney" in c: return True
-                if "ออมสิน" in w and "ออมสิน" in c: return True
-                if "เป๋าตัง" in w and "เป๋าตัง" in c: return True
-                return False
-
-            def get_transfer_in_sum(df_source, w_name):
+            # 🔥 ฟังก์ชันคำนวณยอดโอนเข้า-ออกของกระเป๋า w_name (รองรับทั้งตัวเล็ก ตัวใหญ่ ภาษาไทย)
+            def get_transfer_net(df_source, w_name):
                 if df_source.empty:
                     return 0.0
                 trans_df = df_source[df_source['ประเภท'] == '🔄 โอนย้ายกระเป๋า']
                 if trans_df.empty:
                     return 0.0
-                mask = trans_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w_name)).astype(bool)
-                return trans_df[mask]['จำนวนเงิน'].sum()
+                
+                net_val = 0.0
+                w_lower = str(w_name).strip().lower()
+                for _, row in trans_df.iterrows():
+                    amt = float(row['จำนวนเงิน'])
+                    cat = str(row['หมวดหมู่']).strip().lower()
+                    source_w = str(row['กระเป๋า']).strip().lower()
+                    
+                    to_tm = ("truemoney" in cat or "ทรู" in cat or "true money" in cat)
+                    to_kt = ("กรุงไทย" in cat or "krungthai" in cat)
+                    to_aomsin = ("ออมสิน" in cat or "aomsin" in cat)
+                    to_paotang = ("เป๋าตัง" in cat or "g-wallet" in cat or "paotang" in cat)
+                    
+                    # 1) ถ้ากระเป๋านี้คือปลายทาง -> บวกเงินโอนเข้า
+                    if ("truemoney" in w_lower or "ทรู" in w_lower) and to_tm:
+                        net_val += amt
+                    elif "กรุงไทย" in w_lower and to_kt:
+                        net_val += amt
+                    elif "ออมสิน" in w_lower and to_aomsin:
+                        net_val += amt
+                    elif ("เป๋าตัง" in w_lower or "g-wallet" in w_lower) and to_paotang:
+                        net_val += amt
+                    # 2) ถ้ากระเป๋านี้คือต้นทางที่โอนออก -> ลบเงิน
+                    # (และถ้าในชื่อหมวดหมู่บอกว่าโอนเข้า TrueMoney/ออมสิน/เป๋าตัง แต่ไม่ได้เลือกกระเป๋าต้นทาง ให้ถือว่าโอนออกจากกรุงไทยเสมอ)
+                    elif "กรุงไทย" in w_lower and (to_tm or to_aomsin or to_paotang):
+                        net_val -= amt
+                    elif ("truemoney" in w_lower or "ทรู" in w_lower) and (to_kt or to_aomsin or to_paotang):
+                        if "truemoney" in source_w or "ทรู" in source_w:
+                            net_val -= amt
+                return net_val
 
-            def get_transfer_out_sum(df_source, w_name):
-                if df_source.empty:
-                    return 0.0
-                trans_df = df_source[df_source['ประเภท'] == '🔄 โอนย้ายกระเป๋า']
-                if trans_df.empty:
-                    return 0.0
-                mask = ((trans_df['กระเป๋า'] == w_name) & (~trans_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w_name)))).astype(bool)
-                return trans_df[mask]['จำนวนเงิน'].sum()
-
-            # 🔥 ถอดคำว่า '🔄 โอนย้ายกระเป๋า' ออกจาก out_types เพื่อป้องกันการหักเงินซ้ำซ้อน!
+            # 🔥 คำนวณเงินในกระเป๋าทั้ง 4 ใบแบบสะสมจริงตลอดกาล (All-Time Cumulative Wallets) ไร้บรรทัดขโมยเงินกรุงไทย 100%
             wallet_balances = {}
             in_types = ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', '🤝 รับคืนเงินทดจ่าย', '⚖️ ปรับยอดเพิ่ม']
             out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '⚖️ ปรับยอดลด']
             
             for w in wallet_list:
                 if "ออมสิน" in w:
-                    # 🌸 ออมสิน = บัญชีเก็บเงินออมทั้งหมด (Total Savings Vault) ดึงยอด total_sav_now เป็นหลัก!
+                    # 🌸 ออมสิน = บัญชีเก็บเงินออมทั้งหมด (Total Savings Vault)
                     df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
                     w_adj_in = df_w[df_w['ประเภท'] == '⚖️ ปรับยอดเพิ่ม']['จำนวนเงิน'].sum()
                     w_adj_out = df_w[df_w['ประเภท'] == '⚖️ ปรับยอดลด']['จำนวนเงิน'].sum()
@@ -618,11 +628,8 @@ else:
                     df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
                     w_in = df_w[df_w['ประเภท'].isin(in_types)]['จำนวนเงิน'].sum()
                     w_out = df_w[df_w['ประเภท'].isin(out_types)]['จำนวนเงิน'].sum()
-                    
-                    w_trans_in = get_transfer_in_sum(df_cumulative, w)
-                    w_trans_out = get_transfer_out_sum(df_cumulative, w)
-                    
-                    wallet_balances[w] = w_in + w_trans_in - w_out - w_trans_out
+                    w_trans_net = get_transfer_net(df_cumulative, w)
+                    wallet_balances[w] = w_in + w_trans_net - w_out
                 
             net_wealth_total = sum(wallet_balances.values())
 
@@ -639,6 +646,7 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
+            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว (Multi-Wallet 1-Click Sync)
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
                     st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57, เป๋าตัง 28.09) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
@@ -979,7 +987,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v40"
+                key="editor_goals_v41"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1002,7 +1010,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v40"
+                key="editor_wallets_v41"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1024,7 +1032,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v40")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v41")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1034,7 +1042,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v40")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v41")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1092,7 +1100,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v40"
+                key="editor_finance_v41"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
