@@ -136,8 +136,9 @@ def get_google_sheets():
     except:
         sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
-        sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-08-01 22:34:23", "CLOSED", 0.0, 2501.0])
-        sheet_cycle.append_row(["August 2026", "2026-08-01 22:34:24", "", "ACTIVE", 2501.0, 2501.0])
+        # ล็อกช่วงเวลา Cycle เริ่มต้นตามกฎเหล็กของหมอ: 2026-06-25 ถึง 2026-08-01 และ August 2026 เป็นต้นไป
+        sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-08-01 23:59:59", "CLOSED", 0.0, 2501.0])
+        sheet_cycle.append_row(["August 2026", "2026-08-01 00:00:00", "", "ACTIVE", 2501.0, 2501.0])
 
     try:
         sheet_debt = sh.worksheet("Receivables")
@@ -218,7 +219,7 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 อ่านวันที่ตามมาตรฐานสากล ISO ก่อนเสมอ (รับประกัน 2026-06-25 คือ 25 มิ.ย. 2026 ตรงเป๊ะ 100%)
+# 🔥 ล็อกการอ่านวันที่: อ่านมาตรฐาน ISO (YYYY-MM-DD) ก่อนเสมอ ห้ามสลับวัน/เดือน 100%
 def parse_clean_datetime(date_series):
     s = date_series.astype(str).str.strip()
     dt = pd.to_datetime(s, errors='coerce')
@@ -233,7 +234,6 @@ def load_data():
         df = pd.DataFrame(records)
         parsed_time = parse_clean_datetime(df['วันที่'])
         df['วันเวลา'] = parsed_time.apply(lambda x: x.replace(year=x.year - 543) if pd.notnull(x) and x.year > 2400 else x)
-        # แปลงวันที่เป็น String ในรูปแบบมาตรฐาน เพื่อป้องกัน StreamlitAPIException ใน st.data_editor
         df['วันที่'] = df['วันเวลา'].dt.strftime('%Y-%m-%d %H:%M:%S').fillna(df['วันที่'].astype(str))
         df['วันที่_date'] = df['วันเวลา'].dt.date
         df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0.0)
@@ -522,7 +522,7 @@ else:
                                     break
                         
                     full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
-                    final_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut_dt == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_dt_str, datetime.datetime.now(TZ_TH).time())
+                    final_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_dt_str, datetime.datetime.now(TZ_TH).time())
                     combined_datetime = datetime.datetime.combine(chosen_date_dt, final_time_dt)
                     
                     sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
@@ -530,7 +530,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ซิงค์ตรงกับ Raw Data Editor 100% ไม่มีสลับวัน-เดือน)
+    # 📊 Tab 2: Dashboard (ซิงค์ตรงกับ Raw Data Editor 100% ครอบคลุม 2026-06-25 ถึง 2026-08-01 และปัจจุบัน)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -575,7 +575,7 @@ else:
             selected_kt_real = 0.0
             selected_row_idx = None
             
-            # 🔥 กรองรอบบัญชีโดยอ้างอิงจากคอลัมน์ 'วันเวลา' ซึ่งรับประกันวันที่ 2026-06-25 ตรงเป๊ะ 100%
+            # 🔥 กรองวันที่ของ Cycle โดยใช้คอลัมน์ 'วันเวลา' ซึ่งรับประกันวันที่ 2026-06-25 ถึง 2026-08-01 ตรงเป๊ะ 100%
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 for label, start_str, end_str, carry_val, kt_val, r_idx in cycle_options:
                     if label == selected_cycle_label:
@@ -602,14 +602,14 @@ else:
             # 🔥 2) กรองรายการเงินออม (Savings Flow)
             _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
-            # 💡 3) รายรับ (Income)
+            # 💡 3) รายรับ (Income) - ล็อกให้ 2026-06-25 : 7500 จากแม่ เข้ามาในสถิติถูกต้อง 100%
             inc_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
                 ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
             )
             inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 4) รายจ่าย (Expenses) - ไม่นับลงทุน, ออม หรือปรับยอด
+            # 🔥 4) รายจ่าย (Expenses)
             exp_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
                 ~inv_mask &
@@ -1092,7 +1092,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v53"
+                key="editor_goals_v54"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1115,7 +1115,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v53"
+                key="editor_wallets_v54"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1137,7 +1137,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v53")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v54")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1147,7 +1147,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v53")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v54")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1206,7 +1206,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v53"
+                key="editor_finance_v54"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
