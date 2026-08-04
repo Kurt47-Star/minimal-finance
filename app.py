@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมเพิ่ม 4 ธนาคารหลักให้อัตโนมัติ (กรุงไทย, TrueMoney, ออมสิน, เป๋าตัง)
+# 🚀 ระบบ Smart Cache พร้อมเพิ่ม 4 ธนาคารหลักให้อัตโนมัติ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -285,9 +285,8 @@ def calculate_savings_metrics(df_source):
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     dep_mask = (
         df_source['ประเภท'].astype(str).str.contains('ออม|save|saving', case=False, na=False) |
-        df_source['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม', case=False, na=False) |
-        (df_source['ประเภท'].astype(str).str.contains('โอนย้าย|transfer', case=False, na=False) & 
-         df_source['หมวดหมู่'].astype(str).str.contains('ออมสิน|aomsin|ออม', case=False, na=False))
+        df_source['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน', case=False, na=False) |
+        df_source['รายละเอียด'].astype(str).str.contains('ออมสิน|aomsin|เงินออม', case=False, na=False)
     ) & ~df_source['ประเภท'].astype(str).str.contains('ถอน|กู้|คืน', case=False, na=False)
 
     with_mask = df_source['ประเภท'].astype(str).str.contains('ถอน.*ออม|ออม.*ถอน', case=False, na=False)
@@ -520,7 +519,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (อัปเกรด Smart Savings & Investments Routing 100%)
+    # 📊 Tab 2: Dashboard (ผ่าตัดตรรกะใหม่ 100%: Smart Savings/Investments & Expense Analysis)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -581,11 +580,12 @@ else:
                             df_cycle = df_cycle[df_cycle['วันที่'] >= start_dt]
                         break
 
-            # 🔥 1) กรองรายการลงทุน (Investments) ครอบคลุมทั้งจดตรง และโอนย้ายไปลงทุน
+            # 🔥 1) กรองรายการเงินลงทุน (Investments Flow) อัจฉริยะ ครอบคลุมทั้งจดตรง และโอนไปลงทุน
             inv_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
-                df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False)
-            )
+                df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง|dime|bitkub|innovestx', case=False, na=False) |
+                df_cycle['รายละเอียด'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง|dime|bitkub|innovestx', case=False, na=False)
+            ) & ~df_cycle['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
             inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
 
             # 🔥 2) กรองรายการเงินออม (Savings Flow) ครอบคลุมทั้งจดตรง และโอนเข้า "ออมสิน"
@@ -594,15 +594,16 @@ else:
             # 💡 3) รายรับ (Income)
             inc_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
-                ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน', case=False, na=False)
+                ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
             )
             inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
-            # 💡 4) รายจ่าย (Expenses) - ไม่นับรายการที่เป็น ลงทุน หรือ ออม
+            # 🔥 4) รายจ่าย (Expenses) - แยกออกจากเงินออม, ลงทุน และปรับยอดอย่างเด็ดขาด
             exp_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
                 ~inv_mask &
-                ~df_cycle['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม|ออมสิน', case=False, na=False)
+                ~df_cycle['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน', case=False, na=False) &
+                ~df_cycle['ประเภท'].astype(str).str.contains('ปรับยอด', case=False, na=False)
             )
             exp = float(df_cycle[exp_mask]['จำนวนเงิน'].sum())
 
@@ -841,7 +842,8 @@ else:
             
             st.markdown("---")
             
-            expense_df = df_cycle[df_cycle['ประเภท'] == 'รายจ่าย']
+            # 🔥 ปลดล็อก Expense Analysis อัจฉริยะ: ใช้ตัวกรอง exp_mask ทำให้กราฟวงกลมและกราฟแท่งแสดงผลตามปกติ 100%!
+            expense_df = df_cycle[exp_mask].copy()
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
                 st.markdown("<p class='quick-add-text'>Expense Analysis</p>", unsafe_allow_html=True)
@@ -1032,7 +1034,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v46"
+                key="editor_goals_v47"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1055,7 +1057,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v46"
+                key="editor_wallets_v47"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1077,7 +1079,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v46")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v47")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1087,7 +1089,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v46")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v47")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1145,7 +1147,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v44"
+                key="editor_finance_v45"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
