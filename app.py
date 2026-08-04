@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมเพิ่ม 4 ธนาคารหลักให้อัตโนมัติ
+# 🚀 ระบบ Smart Cache พร้อมเพิ่ม 4 ธนาคารหลักให้อัตโนมัติ (กรุงไทย, TrueMoney, ออมสิน, เป๋าตัง)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -218,7 +218,6 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 แก้บั๊กวันที่ 100%: ลบ dayfirst=True ออก เพื่อไม่ให้สลับ 2026-08-03 เป็นวันที่ 8 มีนาคม!
 def load_data():
     records = fetch_main_data()
     if records:
@@ -520,7 +519,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ซ่อมบั๊กวันที่ + อ้างอิงแจกแจง Expense Breakdown)
+    # 📊 Tab 2: Dashboard (ซ่อมบั๊ก KeyError 100% + อ้างอิงแจกแจง Expense Breakdown)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -693,7 +692,7 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
-            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว
+            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว (Multi-Wallet 1-Click Sync)
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
                     st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57, เป๋าตัง 28.09) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
@@ -799,7 +798,7 @@ else:
                     x_tick_format = "%Y"
                     
                 if not df_trend.empty:
-                    trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'])['จำนวนเงิน'].sum().reset_index()
+                    trend_data_raw = df_trend.groupby(['เวลา', 'ประเภท'], as_index=False)['จำนวนเงิน'].sum()
                     if not trend_data_raw.empty:
                         pivot_trend = trend_data_raw.pivot(index='เวลา', columns='ประเภท', values='จำนวนเงิน').fillna(0)
                         
@@ -843,7 +842,7 @@ else:
             
             st.markdown("---")
             
-            # 🔥 Expense Analysis + ระบบอ้างอิงรายละเอียดบิลในแต่ละ Slope/Slice
+            # 🔥 Expense Analysis + ระบบอ้างอิงรายละเอียดบิลในแต่ละ Slope/Slice (แก้จบ KeyError บรรทัด 913 100%)
             expense_df = df_cycle[exp_mask].copy()
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
@@ -857,13 +856,13 @@ else:
             col_chart1, col_chart2 = st.columns([1, 1.2])
             if not expense_df.empty:
                 filtered_expense_df = expense_df[expense_df['หมวดหมู่หลัก'].isin(selected_main_filter)] if selected_main_filter else pd.DataFrame(columns=expense_df.columns)
-                all_pie_data = expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
+                all_pie_data = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
                 unique_main_cats = all_pie_data['หมวดหมู่หลัก'].tolist()
                 cat_color_map = {cat: SUB_CAT_PALETTE[i % len(SUB_CAT_PALETTE)] for i, cat in enumerate(unique_main_cats)}
                 
                 with col_chart1:
                     if not filtered_expense_df.empty:
-                        pie_data = filtered_expense_df.groupby('หมวดหมู่หลัก')['จำนวนเงิน'].sum().reset_index()
+                        pie_data = filtered_expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
                         pie_data['จำนวนเงิน'] = pie_data['จำนวนเงิน'].abs() 
                         
                         fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.78, color='หมวดหมู่หลัก', color_discrete_map=cat_color_map)
@@ -875,7 +874,7 @@ else:
                         
                 with col_chart2:
                     if not filtered_expense_df.empty:
-                        sub_data = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].sum().reset_index()
+                        sub_data = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'], as_index=False)['จำนวนเงิน'].sum()
                         sub_data['จำนวนเงิน'] = sub_data['จำนวนเงิน'].abs()
                         
                         if len(selected_main_filter) == len(all_main_cats):
@@ -893,19 +892,19 @@ else:
                         )
                         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
                 
-                # 🔥 ตารางอ้างอิงแจกแจงรายละเอียดรายบิลของแต่ละ Slice / Slope (Expense Breakdown Reference)
+                # 🔥 ตารางอ้างอิงแจกแจงรายละเอียดรายบิลของแต่ละ Slice / Slope แบบ Flat Columns Guaranteed!
                 st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
                 with st.expander("📋 อ้างอิงที่มาและรายละเอียดรายบิลของแต่ละหมวดหมู่ (Expense Breakdown Reference)", expanded=True):
                     st.caption("💡 ดูรายการที่มาของยอดในกราฟแต่ละหมวดหมู่ เพื่อเช็ครายละเอียด วันที่ และกระเป๋าที่จ่าย")
                     
                     if not filtered_expense_df.empty:
-                        # 1) ตารางสรุปสัดส่วนตามหมวดหมู่หลัก/ย่อย
-                        sum_cat_df = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย']).agg(
-                            รวมเป็นเงิน=('จำนวนเงิน', 'sum'),
-                            จำนวนครั้ง=('จำนวนเงิน', 'count')
-                        ).reset_index()
+                        sum_cat_df = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'], as_index=False)['จำนวนเงิน'].sum()
+                        sum_cat_df.columns = ['หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รวมเป็นเงิน']
+                        count_series = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'])['จำนวนเงิน'].count().values
+                        sum_cat_df['จำนวนครั้ง'] = count_series
+                        
                         total_exp_selected = sum_cat_df['รวมเป็นเงิน'].sum()
-                        sum_cat_df['สัดส่วน (%)'] = (sum_cat_df['รวมเป็นเงิน'] / total_exp_selected * 100).round(1)
+                        sum_cat_df['สัดส่วน (%)'] = (sum_cat_df['รวมเป็นเงิน'] / total_exp_selected * 100).round(1) if total_exp_selected > 0 else 0.0
                         sum_cat_df = sum_cat_df.sort_values(by='รวมเป็นเงิน', ascending=False)
                         
                         st.markdown("**1️⃣ สรุปยอดรวมและสัดส่วนแต่ละหมวดหมู่:**")
@@ -914,7 +913,6 @@ else:
                             use_container_width=True, hide_index=True
                         )
                         
-                        # 2) ฟิลเตอร์เลือกดูเฉพาะหมวดหมู่ที่ต้องการเช็คบิล
                         st.markdown("**2️⃣ เจาะดูรายการบิลดิบของแต่ละหมวดหมู่:**")
                         filter_cat_ref = st.selectbox("🔎 กรองดูเฉพาะหมวดหมู่หลักที่ต้องการตรวจสอบ:", ["แสดงทั้งหมดที่เลือก"] + sorted(list(filtered_expense_df['หมวดหมู่หลัก'].unique())))
                         
@@ -1070,7 +1068,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v48"
+                key="editor_goals_v49"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1093,7 +1091,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v48"
+                key="editor_wallets_v49"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1115,7 +1113,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v48")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v49")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1125,7 +1123,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v48")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v49")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1183,7 +1181,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v46"
+                key="editor_finance_v49"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
