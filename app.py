@@ -267,7 +267,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 📌 โหลดข้อมูล Wallets (ธนาคารและกระเป๋าเงิน) - รับรองมี 4 ธนาคารครบถ้วน
+# 📌 โหลดข้อมูล Wallets (ธนาคารและกระเป๋าเงิน)
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() if pd.notnull(w) and str(w).strip() != ""]
@@ -279,23 +279,32 @@ goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
-# 🔥 ฟังก์ชันรวมยอดแบบคำสำคัญ (Fuzzy Keyword Matching) ปลอดภัย 100% ไม่สนอิโมจิ
-def sum_type(df_src, kw, exclude_kw=[]):
-    if df_src.empty or 'ประเภท' not in df_src.columns:
-        return 0.0
-    mask = df_src['ประเภท'].astype(str).str.contains(kw, case=False, na=False)
-    for ex in exclude_kw:
-        mask = mask & (~df_src['ประเภท'].astype(str).str.contains(ex, case=False, na=False))
-    return float(df_src[mask]['จำนวนเงิน'].sum())
+# 🔥 ฟังก์ชันคำนวณเงินออมรวม (รองรับทั้งจดตรงๆ และโอนย้ายเข้าออมสิน)
+def calculate_savings_metrics(df_source):
+    if df_source.empty or 'ประเภท' not in df_source.columns:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    dep_mask = (
+        df_source['ประเภท'].astype(str).str.contains('ออม|save|saving', case=False, na=False) |
+        df_source['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม', case=False, na=False) |
+        (df_source['ประเภท'].astype(str).str.contains('โอนย้าย|transfer', case=False, na=False) & 
+         df_source['หมวดหมู่'].astype(str).str.contains('ออมสิน|aomsin|ออม', case=False, na=False))
+    ) & ~df_source['ประเภท'].astype(str).str.contains('ถอน|กู้|คืน', case=False, na=False)
 
-# คำนวณสรุปคลังเงินออมสะสมทั้งหมดล่วงหน้า
-sav_dep_global = sum_type(df, 'เงินออม', exclude_kw=['ถอน', 'กู้', 'คืน'])
-sav_withdrawn_global = sum_type(df, 'ถอนเงินออม')
-sav_loan_global = sum_type(df, 'กู้เงินออม', exclude_kw=['คืน'])
-sav_repay_global = sum_type(df, 'คืนเงินกู้ออม')
+    with_mask = df_source['ประเภท'].astype(str).str.contains('ถอน.*ออม|ออม.*ถอน', case=False, na=False)
+    loan_mask = (df_source['ประเภท'].astype(str).str.contains('กู้.*ออม|ออม.*กู้', case=False, na=False) & 
+                 ~df_source['ประเภท'].astype(str).str.contains('คืน', case=False, na=False))
+    repay_mask = df_source['ประเภท'].astype(str).str.contains('คืน.*กู้|กู้.*คืน', case=False, na=False)
 
-total_sav_now = sav_dep_global + sav_repay_global - sav_withdrawn_global - sav_loan_global
-outstanding_loan = sav_loan_global - sav_repay_global
+    dep_val = float(df_source[dep_mask]['จำนวนเงิน'].sum())
+    with_val = float(df_source[with_mask]['จำนวนเงิน'].sum())
+    loan_val = float(df_source[loan_mask]['จำนวนเงิน'].sum())
+    repay_val = float(df_source[repay_mask]['จำนวนเงิน'].sum())
+
+    net_flow = dep_val + repay_val - with_val - loan_val
+    outstanding = loan_val - repay_val
+    return dep_val, with_val, loan_val, repay_val, net_flow, outstanding
+
+_, _, _, _, total_sav_now, outstanding_loan = calculate_savings_metrics(df)
 
 HONEY_POT_MAP = {
     "รายรับ": "#2a9d8f",     
@@ -511,7 +520,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (แก้จบ KeyError บรรทัด 611 ด้วย Safe Helper Function)
+    # 📊 Tab 2: Dashboard (อัปเกรด Smart Savings & Investments Routing 100%)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -572,16 +581,30 @@ else:
                             df_cycle = df_cycle[df_cycle['วันที่'] >= start_dt]
                         break
 
-            # 💡 คำนวณรายรับ-รายจ่ายของรอบเดือนที่เลือก (Monthly Flow)
-            inc = sum_type(df_cycle, 'รายรับ', exclude_kw=['รับคืน'])
-            exp = sum_type(df_cycle, 'รายจ่าย')
-            inv = sum_type(df_cycle, 'เงินลงทุน')
-            
-            sav_dep_c = sum_type(df_cycle, 'เงินออม', exclude_kw=['ถอน', 'กู้', 'คืน'])
-            sav_withdrawn_c = sum_type(df_cycle, 'ถอนเงินออม')
-            sav_loan_c = sum_type(df_cycle, 'กู้เงินออม', exclude_kw=['คืน'])
-            sav_repay_c = sum_type(df_cycle, 'คืนเงินกู้ออม')
-            sav_flow = sav_dep_c + sav_repay_c - sav_withdrawn_c - sav_loan_c
+            # 🔥 1) กรองรายการลงทุน (Investments) ครอบคลุมทั้งจดตรง และโอนย้ายไปลงทุน
+            inv_mask = (
+                df_cycle['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
+                df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False)
+            )
+            inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
+
+            # 🔥 2) กรองรายการเงินออม (Savings Flow) ครอบคลุมทั้งจดตรง และโอนเข้า "ออมสิน"
+            _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
+
+            # 💡 3) รายรับ (Income)
+            inc_mask = (
+                df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
+                ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน', case=False, na=False)
+            )
+            inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
+
+            # 💡 4) รายจ่าย (Expenses) - ไม่นับรายการที่เป็น ลงทุน หรือ ออม
+            exp_mask = (
+                df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
+                ~inv_mask &
+                ~df_cycle['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม|ออมสิน', case=False, na=False)
+            )
+            exp = float(df_cycle[exp_mask]['จำนวนเงิน'].sum())
 
             def is_transfer_row(row_type):
                 t = str(row_type).strip().lower()
@@ -595,19 +618,16 @@ else:
                 v = str(row_type).strip()
                 return bool(('รายจ่าย' in v) or ('เงินลงทุน' in v) or ('เงินออม' in v and 'ถอน' not in v and 'กู้' not in v) or ('คืนเงินกู้ออม' in v) or ('เงินทดจ่าย' in v and 'รับคืน' not in v) or ('ปรับยอดลด' in v))
 
-            # 🔥 ฟังก์ชันคำนวณเงินเข้า/ออก ป้องกัน KeyError บรรทัด 611 แบบ 100%
             def safe_sum_by_mask(df_sub, mask_func):
                 if df_sub.empty or 'ประเภท' not in df_sub.columns:
                     return 0.0
                 mask = df_sub['ประเภท'].apply(mask_func).astype(bool)
                 return float(df_sub[mask]['จำนวนเงิน'].sum())
 
-            # 🔥 คำนวณยอดเงินแต่ละธนาคารแบบเป็นอิสระต่อกัน 100% (Independent Wallets)
+            # 🔥 คำนวณเงินแต่ละธนาคารแบบเป็นอิสระต่อกัน (Independent Wallets)
             wallet_balances = {w: 0.0 for w in wallet_list}
-            
             for w in wallet_list:
                 if "ออมสิน" in w:
-                    # 🌸 ออมสิน = บัญชีเก็บเงินออมทั้งหมด (Total Savings Vault)
                     df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
                     w_adj_in = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดเพิ่ม', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
                     w_adj_out = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดลด', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
@@ -628,7 +648,6 @@ else:
                         cat_str = str(row['หมวดหมู่']).strip().lower()
                         rec_wallet = str(row['กระเป๋า']).strip()
                         
-                        # หาบัญชีปลายทาง (To Wallet)
                         to_w = None
                         for w in wallet_list:
                             w_clean = w.lower()
@@ -647,17 +666,13 @@ else:
                             elif w_clean in cat_str:
                                 to_w = w; break
                         
-                        # ถ้าพบปลายทาง -> บวกเงินเข้าปลายทาง (+amt)
                         if to_w and to_w in wallet_balances:
                             wallet_balances[to_w] += amt
-                            
-                            # หาต้นทาง (From Wallet) และหักเงินออก (-amt)
                             from_w = rec_wallet
                             if from_w == to_w:
                                 for w in wallet_list:
                                     if "กรุงไทย" in w or "krungthai" in w.lower():
                                         from_w = w; break
-                                        
                             if from_w in wallet_balances and from_w != to_w:
                                 wallet_balances[from_w] -= amt
 
@@ -1017,7 +1032,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v45"
+                key="editor_goals_v46"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1040,7 +1055,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v45"
+                key="editor_wallets_v46"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1062,7 +1077,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v45")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v46")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1072,7 +1087,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v45")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v46")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1130,7 +1145,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v43"
+                key="editor_finance_v44"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
