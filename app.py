@@ -493,7 +493,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard
+    # 📊 Tab 2: Dashboard (Safe Boolean Mask Fix 100%)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -574,6 +574,16 @@ else:
                 if "TrueMoney" in w_name and "TrueMoney" in c: return True
                 return False
 
+            # 🔥 ฟังก์ชันหาเงินโอนเข้าปลอดภัย 100% ป้องกัน KeyError บรรทัด 587
+            def get_transfer_in_sum(df_source, w_name):
+                if df_source.empty:
+                    return 0.0
+                trans_df = df_source[df_source['ประเภท'] == '🔄 โอนย้ายกระเป๋า']
+                if trans_df.empty:
+                    return 0.0
+                mask = trans_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w_name)).astype(bool)
+                return trans_df[mask]['จำนวนเงิน'].sum()
+
             wallet_balances = {}
             in_types = ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', '🤝 รับคืนเงินทดจ่าย']
             out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '🔄 โอนย้ายกระเป๋า']
@@ -582,9 +592,7 @@ else:
                 df_w = df_dash[df_dash['กระเป๋า'] == w]
                 w_in = df_w[df_w['ประเภท'].isin(in_types)]['จำนวนเงิน'].sum()
                 w_out = df_w[df_w['ประเภท'].isin(out_types)]['จำนวนเงิน'].sum()
-                
-                trans_in_df = df_dash[df_dash['ประเภท'] == '🔄 โอนย้ายกระเป๋า']
-                w_trans_in = trans_in_df[trans_in_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w))]['จำนวนเงิน'].sum()
+                w_trans_in = get_transfer_in_sum(df_dash, w)
                 
                 wallet_balances[w] = w_in + w_trans_in - w_out
                 
@@ -965,7 +973,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v32"
+                key="editor_goals_v33"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -988,7 +996,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v32"
+                key="editor_wallets_v33"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1010,7 +1018,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v32")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v33")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1020,7 +1028,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v32")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v33")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1029,7 +1037,6 @@ else:
             st.rerun()
             
         st.markdown("---")
-        # 🔥 อัปเกรด Raw Data Editor: เพิ่ม Smart Explorer ค้นหา/กรอง พร้อมตัวคูณคอลัมน์และเรียงล่าสุดขึ้นบนสุด!
         st.subheader("✏️ Raw Data Editor & Explorer (จัดการและค้นหาข้อมูลดิบ)")
         
         if not df.empty:
@@ -1079,7 +1086,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v32"
+                key="editor_finance_v33"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
