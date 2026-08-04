@@ -493,7 +493,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (Safe Boolean Mask Fix 100%)
+    # 📊 Tab 2: Dashboard (Clean-Indent Cards Fix 100%)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -574,7 +574,6 @@ else:
                 if "TrueMoney" in w_name and "TrueMoney" in c: return True
                 return False
 
-            # 🔥 ฟังก์ชันหาเงินโอนเข้าปลอดภัย 100% ป้องกัน KeyError บรรทัด 587
             def get_transfer_in_sum(df_source, w_name):
                 if df_source.empty:
                     return 0.0
@@ -600,24 +599,27 @@ else:
                 other_sum = sum(wallet_balances[w] for w in wallet_list[1:])
                 wallet_balances[wallet_list[0]] = net_in_cycle - other_sum
 
+            # 🔥 เขียนโค้ด HTML การ์ดทุกธนาคารโดยไม่เว้นช่องว่างนำหน้า ป้องกัน Streamlit ตีความเป็น Code Block
             card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
                 c = card_colors[idx % len(card_colors)]
                 bal = wallet_balances[w]
-                cards_html += f"""
-                <div style='flex: 1; min-width: 170px; background-color: {c}18; border: 1px solid {c}; padding: 12px 18px; border-radius: 14px;'>
-                    <span style='font-size: 13px; opacity: 0.8;'>{w}</span>
-                    <h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3>
-                </div>
-                """
-            cards_html += f"""
-            <div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'>
-                <span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินสดสุทธิ</span>
-                <h3 style='margin: 0;'>฿{net_in_cycle:,.2f}</h3>
-            </div>
-            """
-            st.markdown(f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>", unsafe_allow_html=True)
+                cards_html += (
+                    f"<div style='flex: 1; min-width: 170px; background-color: {c}18; border: 1px solid {c}; "
+                    f"padding: 12px 18px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.8;'>{w}</span>"
+                    f"<h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
+                )
+            cards_html += (
+                "<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); "
+                "border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'>"
+                "<span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินสดสุทธิ</span>"
+                f"<h3 style='margin: 0;'>฿{net_in_cycle:,.2f}</h3></div>"
+            )
+            st.markdown(
+                f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>",
+                unsafe_allow_html=True,
+            )
 
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
@@ -973,7 +975,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v33"
+                key="editor_goals_v34"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -996,7 +998,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v33"
+                key="editor_wallets_v34"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1018,7 +1020,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v33")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v34")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1028,7 +1030,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v33")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v34")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1086,7 +1088,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v33"
+                key="editor_finance_v34"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
