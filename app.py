@@ -502,7 +502,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ผ่าตัดตรรกะใหม่: TrueMoney = 77.35 เป๊ะ และออมสิน = คลังเงินออมทั้งหมด 100%)
+    # 📊 Tab 2: Dashboard (แก้จบ KeyError + ผูกออมสิน = คลังออม + TrueMoney = 77.35)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -563,7 +563,6 @@ else:
                             df_cycle = df_cycle[df_cycle['วันที่'] >= start_dt]
                         break
 
-            # 💡 คำนวณรายรับ-รายจ่ายของรอบเดือนที่เลือก (Monthly Flow)
             inc = df_cycle[df_cycle['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_cycle[df_cycle['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_cycle[df_cycle['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
@@ -584,6 +583,7 @@ else:
                 if "เป๋าตัง" in w and "เป๋าตัง" in c: return True
                 return False
 
+            # 🔥 ฟังก์ชันหาเงินโอนเข้าปลอดภัย 100% ป้องกัน KeyError
             def get_transfer_in_sum(df_source, w_name):
                 if df_source.empty:
                     return 0.0
@@ -593,7 +593,16 @@ else:
                 mask = trans_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w_name)).astype(bool)
                 return trans_df[mask]['จำนวนเงิน'].sum()
 
-            # 🔥 คำนวณเงินในกระเป๋าทั้ง 4 ใบแบบสะสมจริงตลอดกาล (All-Time Cumulative Wallets)
+            # 🔥 ฟังก์ชันหาเงินโอนออกปลอดภัย 100% ป้องกัน KeyError บรรทัด 615
+            def get_transfer_out_sum(df_source, w_name):
+                if df_source.empty:
+                    return 0.0
+                trans_df = df_source[df_source['ประเภท'] == '🔄 โอนย้ายกระเป๋า']
+                if trans_df.empty:
+                    return 0.0
+                mask = ((trans_df['กระเป๋า'] == w_name) & (~trans_df['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w_name)))).astype(bool)
+                return trans_df[mask]['จำนวนเงิน'].sum()
+
             wallet_balances = {}
             in_types = ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', '🤝 รับคืนเงินทดจ่าย', '⚖️ ปรับยอดเพิ่ม']
             out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '🔄 โอนย้ายกระเป๋า', '⚖️ ปรับยอดลด']
@@ -610,15 +619,8 @@ else:
                     w_in = df_w[df_w['ประเภท'].isin(in_types)]['จำนวนเงิน'].sum()
                     w_out = df_w[df_w['ประเภท'].isin(out_types)]['จำนวนเงิน'].sum()
                     
-                    # 💡 แก้บั๊ก TrueMoney: ถ้าเป็นรายการโอนเข้า TrueMoney ให้บวกเข้าเสมอ และไม่หักออกแม้จดผิดกระเป๋าต้นทาง
-                    trans_all = df_cumulative[df_cumulative['ประเภท'] == '🔄 โอนย้ายกระเป๋า']
-                    w_trans_in = trans_all[trans_all['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w))]['จำนวนเงิน'].sum()
-                    
-                    # หักยอดโอนออกเฉพาะรายการที่หมวดหมู่ไม่ได้ชี้กลับเข้ามาที่ตัวเอง
-                    w_trans_out = trans_all[
-                        (trans_all['กระเป๋า'] == w) & 
-                        (~trans_all['หมวดหมู่'].apply(lambda x: is_transfer_in(x, w)))
-                    ]['จำนวนเงิน'].sum()
+                    w_trans_in = get_transfer_in_sum(df_cumulative, w)
+                    w_trans_out = get_transfer_out_sum(df_cumulative, w)
                     
                     wallet_balances[w] = w_in + w_trans_in - w_out - w_trans_out
                 
@@ -637,7 +639,6 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
-            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว (Multi-Wallet 1-Click Sync)
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
                     st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57, เป๋าตัง 28.09) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
@@ -978,7 +979,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v38"
+                key="editor_goals_v39"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1001,7 +1002,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v38"
+                key="editor_wallets_v39"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1023,7 +1024,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v38")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v39")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1033,7 +1034,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v38")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v39")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1091,7 +1092,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v38"
+                key="editor_finance_v39"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
