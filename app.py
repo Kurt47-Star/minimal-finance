@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมสร้างตาราง Wallets, Goals, Receivables
+# 🚀 ระบบ Smart Cache พร้อมเพิ่ม 4 ธนาคารหลักให้อัตโนมัติ (กรุงไทย, TrueMoney, ออมสิน, เป๋าตัง)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -152,13 +152,20 @@ def get_google_sheets():
         sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
 
+    # 📌 จัดการชีต Wallets: ตรวจสอบและเพิ่ม 4 กระเป๋าหลักให้อัตโนมัติ
     try:
         sheet_wallet = sh.worksheet("Wallets")
+        existing_w = [str(x).strip() for x in sheet_wallet.col_values(1)[1:] if pd.notnull(x) and str(x).strip() != ""]
+        for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]:
+            if def_w not in existing_w:
+                sheet_wallet.append_row([def_w])
     except:
         sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
         sheet_wallet.append_row(["ชื่อกระเป๋า"])
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
+        sheet_wallet.append_row(["🌸 ออมสิน"])
+        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -212,7 +219,6 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 ฟังก์ชันโหลดข้อมูลหลักที่อัปเกรดความเสถียร: ล้างช่องว่างส่วนเกินและบังคับอ่านวันที่ให้ถูกโซนเสมอ
 def load_data():
     records = fetch_main_data()
     if records:
@@ -262,12 +268,12 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 📌 โหลดข้อมูล Wallets (ธนาคารและกระเป๋าเงิน)
+# 📌 โหลดข้อมูล Wallets (ธนาคารและกระเป๋าเงิน) - รับรองมี 4 ธนาคารครบถ้วน
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() if pd.notnull(w) and str(w).strip() != ""]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
 
 # 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
 goals_data = fetch_goals()
@@ -497,7 +503,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard
+    # 📊 Tab 2: Dashboard (ซิงค์ยอดจริงครบทุกกระเป๋าในปุ่มเดียว)
     # ==========================================
     with tab2:
         if not df.empty:
@@ -556,6 +562,7 @@ else:
                             df_dash = df_dash[df_dash['วันที่'] >= start_dt]
                         break
 
+            # 💡 คำนวณยอด Income และ Expense หลัก
             inc = df_dash[df_dash['ประเภท'] == 'รายรับ']['จำนวนเงิน'].sum()
             exp = df_dash[df_dash['ประเภท'] == 'รายจ่าย']['จำนวนเงิน'].sum()
             inv = df_dash[df_dash['ประเภท'] == 'เงินลงทุน']['จำนวนเงิน'].sum()
@@ -568,7 +575,11 @@ else:
             lend_d = df_dash[df_dash['ประเภท'] == '🤝 เงินทดจ่าย']['จำนวนเงิน'].sum()
             refund_d = df_dash[df_dash['ประเภท'] == '🤝 รับคืนเงินทดจ่าย']['จำนวนเงิน'].sum()
 
-            net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d - exp - inv - sav_dep_d - sav_repay_d - lend_d
+            # 🔥 เงินปรับปรุงยอดซิงค์กระเป๋า (ไม่กระทบ Income/Expense)
+            adj_in = df_dash[df_dash['ประเภท'] == '⚖️ ปรับยอดเพิ่ม']['จำนวนเงิน'].sum()
+            adj_out = df_dash[df_dash['ประเภท'] == '⚖️ ปรับยอดลด']['จำนวนเงิน'].sum()
+
+            net_in_cycle = selected_carry + inc + sav_withdrawn_d + sav_loan_d + refund_d + adj_in - exp - inv - sav_dep_d - sav_repay_d - lend_d - adj_out
             sav_flow = sav_dep_d + sav_repay_d - sav_withdrawn_d - sav_loan_d
 
             def is_transfer_in(cat_str, w_name):
@@ -589,8 +600,8 @@ else:
                 return trans_df[mask]['จำนวนเงิน'].sum()
 
             wallet_balances = {}
-            in_types = ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', '🤝 รับคืนเงินทดจ่าย']
-            out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '🔄 โอนย้ายกระเป๋า']
+            in_types = ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', '🤝 รับคืนเงินทดจ่าย', '⚖️ ปรับยอดเพิ่ม']
+            out_types = ['รายจ่าย', 'เงินลงทุน', 'เงินออม', 'คืนเงินกู้ออม', '🤝 เงินทดจ่าย', '🔄 โอนย้ายกระเป๋า', '⚖️ ปรับยอดลด']
             
             for w in wallet_list:
                 df_w = df_dash[df_dash['กระเป๋า'] == w]
@@ -604,7 +615,7 @@ else:
                 other_sum = sum(wallet_balances[w] for w in wallet_list[1:])
                 wallet_balances[wallet_list[0]] = net_in_cycle - other_sum
 
-            # 🔥 สร้าง HTML การ์ดโดยไร้ย่อหน้า (Zero Indent) และใช้ single line string
+            # --- 💳 เรนเดอร์การ์ดธนาคารทุกใบสวยงามไร้ย่อหน้านำหน้า ---
             card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
@@ -617,53 +628,46 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
+            # 🔥 กล่องคาลิเบรทใหม่: ซิงค์ยอดเงินจริงครบทุกกระเป๋าในคลิกเดียว (Multi-Wallet 1-Click Sync)
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 diff = primary_wallet_bal - selected_kt_real
                 is_balanced = abs(diff) < 0.01
                 
-                with st.expander(f"⚖️ คาลิเบรทบัญชีจริง [{primary_wallet_name}] (Bank Calibration): {'✅ ตรงกัน 100%' if is_balanced else f'⚠️ ส่วนต่าง ฿{diff:,.2f}'}", expanded=not is_balanced):
-                    c_cal1, c_cal2, c_cal3, c_cal4 = st.columns([1.2, 1.2, 1.2, 2.2])
-                    c_cal1.markdown(f"**💰 เงินตั้งต้นรอบนี้**<br><h4>฿{selected_carry:,.2f}</h4>", unsafe_allow_html=True)
-                    c_cal2.markdown(f"**📥 รายรับรอบนี้**<br><h4 style='color:#2a9d8f;'>+฿{inc:,.2f}</h4>", unsafe_allow_html=True)
-                    c_cal3.markdown(f"**🏦 ยอดในแอป**<br><h4>฿{primary_wallet_bal:,.2f}</h4>", unsafe_allow_html=True)
+                with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
+                    st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57, เป๋าตัง 28.09) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
                     
-                    with c_cal4:
-                        with st.form("calibrate_bank_form", clear_on_submit=True):
-                            inp_carry = st.number_input("💰 แก้ไขเงินตั้งต้นรอบนี้ (ยอดยกมาจริง)", value=None, placeholder=f"ปัจจุบัน: ฿{selected_carry:,.2f}", step=100.0, format="%.2f")
-                            inp_kt = st.number_input(f"🏦 เงินจริงใน {primary_wallet_name} (ปัจจุบัน)", value=None, placeholder=f"ปัจจุบัน: ฿{selected_kt_real:,.2f}", step=100.0, format="%.2f")
-                            
-                            sub1, sub2 = st.columns(2)
-                            with sub1:
-                                save_cal = st.form_submit_button("💾 บันทึกยอดลงคลาวด์", use_container_width=True)
-                            with sub2:
-                                sync_clean = st.form_submit_button("✂️ ล้างส่วนต่างเดือนก่อน", use_container_width=True)
-                            
-                            if save_cal:
-                                if selected_row_idx:
-                                    if inp_carry is not None:
-                                        cycle_sheet.update_cell(int(selected_row_idx), 5, float(inp_carry))
-                                    if inp_kt is not None:
-                                        cycle_sheet.update_cell(int(selected_row_idx), 6, float(inp_kt))
-                                    fetch_cycles.clear()
-                                    st.success("อัปเดตข้อมูลคาลิเบรทเรียบร้อย!")
-                                    st.rerun()
-                                    
-                            if sync_clean:
-                                if selected_row_idx:
-                                    flow_in_cycle = primary_wallet_bal - selected_carry
-                                    target_kt = inp_kt if inp_kt is not None else selected_kt_real
-                                    new_carry = target_kt - flow_in_cycle
-                                    cycle_sheet.update_cell(int(selected_row_idx), 5, float(new_carry))
-                                    if inp_kt is not None:
-                                        cycle_sheet.update_cell(int(selected_row_idx), 6, float(inp_kt))
-                                    fetch_cycles.clear()
-                                    st.success(f"ล้างส่วนต่างอดีตเรียบร้อย! ปรับเงินตั้งต้นเป็น ฿{new_carry:,.2f}")
-                                    st.rerun()
-                    
-                    if not is_balanced:
-                        st.markdown(f"<div class='calib-box-diff'><b>💡 ข้อเสนอแนะ:</b> ยอดในแอป {'มากกว่า' if diff > 0 else 'น้อยกว่า'} เงินจริงใน {primary_wallet_name} อยู่ <b>฿{abs(diff):,.2f}</b><br>สามารถกดปุ่ม <b>'✂️ ล้างส่วนต่างเดือนก่อน'</b> เพื่อให้ตรงกับธนาคารจริงทันทีครับ</div>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"<div class='calib-box-match'><b>🎉 ยอดเยี่ยมมากครับหมอ!</b> ยอดเงินใน Minimal Finance Pro ตรงกับธนาคารจริงเป๊ะ 100% ครับ</div>", unsafe_allow_html=True)
+                    with st.form("multi_wallet_calibrate_form", clear_on_submit=False):
+                        target_balances = {}
+                        cols_per_row = min(4, len(wallet_list))
+                        for i in range(0, len(wallet_list), cols_per_row):
+                            row_wallets = wallet_list[i:i+cols_per_row]
+                            cols = st.columns(len(row_wallets))
+                            for j, w in enumerate(row_wallets):
+                                with cols[j]:
+                                    curr_val = wallet_balances.get(w, 0.0)
+                                    val = st.number_input(f"💳 {w}", value=None, placeholder=f"แอป: ฿{curr_val:,.2f}", step=10.0, format="%.2f", key=f"cal_inp_{i+j}")
+                                    target_balances[w] = val
+                        
+                        sync_btn = st.form_submit_button("⚡ ปรับยอดจริงทุกกระเป๋าให้ตรงทันที (1-Click Sync)", use_container_width=True)
+                        if sync_btn:
+                            now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                            changed = False
+                            for w, t_val in target_balances.items():
+                                if t_val is not None:
+                                    curr_b = wallet_balances.get(w, 0.0)
+                                    diff_w = t_val - curr_b
+                                    if abs(diff_w) >= 0.01:
+                                        changed = True
+                                        if diff_w > 0:
+                                            sheet.append_row([now_str, "⚖️ ปรับยอดเพิ่ม", "ปรับยอดบัญชีจริง", float(abs(diff_w)), "คาลิเบรทยอดเงินจริง", w])
+                                        else:
+                                            sheet.append_row([now_str, "⚖️ ปรับยอดลด", "ปรับยอดบัญชีจริง", float(abs(diff_w)), "คาลิเบรทยอดเงินจริง", w])
+                            if changed:
+                                fetch_main_data.clear()
+                                st.success("🎉 ซิงค์ยอดเงินจริงครบทุกกระเป๋าเรียบร้อยครับ!")
+                                st.rerun()
+                            else:
+                                st.warning("กรุณากรอกยอดเงินจริงของกระเป๋าที่ต้องการปรับอย่างน้อย 1 ช่องก่อนกดบันทึกครับ")
 
             m1, m2, m3, m4, m5 = st.columns(5)
             net_title_class = "metric-title" if net_in_cycle >= 0 else "metric-title-alert"
@@ -968,7 +972,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v35"
+                key="editor_goals_v36"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -991,7 +995,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v35"
+                key="editor_wallets_v36"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1013,7 +1017,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v35")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v36")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1023,7 +1027,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v35")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v36")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1069,7 +1073,7 @@ else:
             clean_df_edit = df[["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]].copy()
             clean_df_edit = clean_df_edit.sort_values(by="วันที่", ascending=False)
             
-            type_options_all = ["รายรับ", "รายจ่าย", "เงินออม", "ถอนเงินออม", "กู้เงินออม", "คืนเงินกู้ออม", "เงินลงทุน", "🔄 โอนย้ายกระเป๋า", "🤝 เงินทดจ่าย", "🤝 รับคืนเงินทดจ่าย"]
+            type_options_all = ["รายรับ", "รายจ่าย", "เงินออม", "ถอนเงินออม", "กู้เงินออม", "คืนเงินกู้ออม", "เงินลงทุน", "🔄 โอนย้ายกระเป๋า", "🤝 เงินทดจ่าย", "🤝 รับคืนเงินทดจ่าย", "⚖️ ปรับยอดเพิ่ม", "⚖️ ปรับยอดลด"]
             
             edited_df = st.data_editor(
                 clean_df_edit, 
@@ -1081,7 +1085,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v35"
+                key="editor_finance_v36"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
@@ -1130,7 +1134,7 @@ else:
             emi = P * (r * (1 + r)**n) / ((1 + r)**n - 1)
             schedule = []
             balance = P
-            for month in range(1, int(n) +1):
+            for month in range(1, int(n) + 1):
                 interest_payment = balance * r
                 principal_payment = emi - interest_payment
                 balance -= principal_payment
