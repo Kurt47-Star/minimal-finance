@@ -98,9 +98,6 @@ def get_google_sheets():
     sheet_main = sh.sheet1
     try:
         sheet_main.resize(rows=500, cols=8)
-        headers = sheet_main.row_values(1)
-        if len(headers) < 6 or headers[5] != "กระเป๋า":
-            sheet_main.update_cell(1, 6, "กระเป๋า")
     except Exception:
         pass
     
@@ -176,9 +173,10 @@ if sheet is None:
     st.stop()
 
 # --- ฟังก์ชันโหลดข้อมูลแยก Cache ---
+# 🔥 ใช้ get_all_values() เพื่อไม่ให้เกิด KeyError ไม่ว่าชีตจะไม่มีหัวตารางหรือหัวตารางอยู่บรรทัดไหน
 @st.cache_data(ttl=60)
 def fetch_main_data():
-    return sheet.get_all_records()
+    return sheet.get_all_values()
 
 @st.cache_data(ttl=3600)
 def fetch_quick_adds():
@@ -219,35 +217,44 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 ล็อกการอ่านวันที่: อ่านมาตรฐาน ISO (YYYY-MM-DD) ก่อนเสมอ ห้ามสลับวัน/เดือน 100%
+# 🔥 อ่านวันที่ตามมาตรฐาน ISO (YYYY-MM-DD) ก่อนเสมอ ห้ามสลับวัน/เดือน 100%
 def parse_clean_datetime(date_series):
     s = date_series.astype(str).str.strip()
-    dt = pd.to_datetime(s, errors='coerce')
+    dt = pd.to_datetime(s, format='mixed', errors='coerce')
     if dt.isna().any():
-        dt_alt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+        dt_alt = pd.to_datetime(s, format='mixed', dayfirst=True, errors='coerce')
         dt = dt.fillna(dt_alt)
     return dt
 
 def load_data():
     records = fetch_main_data()
-    if records:
-        df = pd.DataFrame(records)
-        parsed_time = parse_clean_datetime(df['วันที่'])
-        df['วันเวลา'] = parsed_time.apply(lambda x: x.replace(year=x.year - 543) if pd.notnull(x) and x.year > 2400 else x)
-        df['วันที่'] = df['วันเวลา'].dt.strftime('%Y-%m-%d %H:%M:%S').fillna(df['วันที่'].astype(str))
-        df['วันที่_date'] = df['วันเวลา'].dt.date
-        df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0.0)
-        df['ประเภท'] = df['ประเภท'].astype(str).str.strip()
-        df['หมวดหมู่'] = df['หมวดหมู่'].astype(str).str.strip()
-        df['รายละเอียด'] = df['รายละเอียด'].astype(str).str.strip()
-        if 'กระเป๋า' not in df.columns:
-            df['กระเป๋า'] = '🏦 กรุงไทย'
-        else:
-            df['กระเป๋า'] = df['กระเป๋า'].fillna('🏦 กรุงไทย').astype(str).str.strip().replace('', '🏦 กรุงไทย')
-        df['หมวดหมู่หลัก'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[0].strip() if pd.notnull(x) else "ทั่วไป")
-        df['หมวดหมู่ย่อย'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[1].strip() if pd.notnull(x) and ":" in str(x) else "ทั่วไป")
-        return df
-    return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า", "หมวดหมู่หลัก", "หมวดหมู่ย่อย", "วันเวลา", "วันที่_date"])
+    if not records:
+        return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า", "หมวดหมู่หลัก", "หมวดหมู่ย่อย", "วันเวลา", "วันที่_date"])
+    
+    df = pd.DataFrame(records)
+    # รับประกันว่ามีอย่างน้อย 6 คอลัมน์ และตั้งชื่อคอลัมน์มาตรฐานเสมอ (ไม่มี KeyError แน่นอน 100%)
+    while len(df.columns) < 6:
+        df[len(df.columns)] = ""
+    df = df.iloc[:, :6]
+    df.columns = ["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]
+    
+    # กรองแถวหัวตารางที่หลงเหลืออยู่หรือแถวว่างออก
+    df = df[df['วันที่'].astype(str).str.strip() != 'วันที่']
+    df = df[df['วันที่'].astype(str).str.strip() != '']
+    df = df.reset_index(drop=True)
+    
+    parsed_time = parse_clean_datetime(df['วันที่'])
+    df['วันเวลา'] = parsed_time.apply(lambda x: x.replace(year=x.year - 543) if pd.notnull(x) and x.year > 2400 else x)
+    df['วันที่'] = df['วันเวลา'].dt.strftime('%Y-%m-%d %H:%M:%S').fillna(df['วันที่'].astype(str))
+    df['วันที่_date'] = df['วันเวลา'].dt.date
+    df['จำนวนเงิน'] = pd.to_numeric(df['จำนวนเงิน'], errors='coerce').fillna(0.0)
+    df['ประเภท'] = df['ประเภท'].astype(str).str.strip()
+    df['หมวดหมู่'] = df['หมวดหมู่'].astype(str).str.strip()
+    df['รายละเอียด'] = df['รายละเอียด'].astype(str).str.strip()
+    df['กระเป๋า'] = df['กระเป๋า'].fillna('🏦 กรุงไทย').astype(str).str.strip().replace('', '🏦 กรุงไทย')
+    df['หมวดหมู่หลัก'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[0].strip() if pd.notnull(x) else "ทั่วไป")
+    df['หมวดหมู่ย่อย'] = df['หมวดหมู่'].apply(lambda x: str(x).split(":")[1].strip() if pd.notnull(x) and ":" in str(x) else "ทั่วไป")
+    return df
 
 def load_categories():
     records = fetch_categories()
@@ -602,7 +609,7 @@ else:
             # 🔥 2) กรองรายการเงินออม (Savings Flow)
             _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
-            # 💡 3) รายรับ (Income) - ล็อกให้ 2026-06-25 : 7500 จากแม่ เข้ามาในสถิติถูกต้อง 100%
+            # 💡 3) รายรับ (Income)
             inc_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
                 ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
@@ -1092,7 +1099,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v55"
+                key="editor_goals_v56"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1115,7 +1122,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v55"
+                key="editor_wallets_v56"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1137,7 +1144,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v55")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v56")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1147,7 +1154,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v55")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v56")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1206,7 +1213,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v55"
+                key="editor_finance_v56"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
