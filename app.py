@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache (ตัดกระเป๋าเป๋าตังออก เหลือ 3 ธนาคารหลัก)
+# 🚀 ระบบ Smart Cache พร้อมระบบ Clean-up ตัดเป๋าตัง และล็อกเวลา Cycle อัตโนมัติ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,14 +120,18 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
+    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (July จบ 31 ก.ค. และ August เริ่ม 1 ส.ค.)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
-            sheet_cycle.resize(rows=50, cols=10)
-            headers = sheet_cycle.row_values(1)
-            if len(headers) < 6:
-                sheet_cycle.update_cell(1, 5, "ยอดยกมา")
-                sheet_cycle.update_cell(1, 6, "เงินจริงกรุงไทย")
+            records_c = sheet_cycle.get_all_values()
+            for idx, r in enumerate(records_c):
+                if len(r) > 0 and "July 2026" in str(r[0]):
+                    sheet_cycle.update_cell(idx + 1, 2, "2026-06-25 00:00:00")
+                    sheet_cycle.update_cell(idx + 1, 3, "2026-07-31 23:59:59")
+                elif len(r) > 0 and "August 2026" in str(r[0]):
+                    sheet_cycle.update_cell(idx + 1, 2, "2026-08-01 00:00:00")
+                    sheet_cycle.update_cell(idx + 1, 3, "")
         except Exception:
             pass
     except:
@@ -149,12 +153,19 @@ def get_google_sheets():
         sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
 
+    # 🔥 ล้างรายชื่อในชีต Wallets ตัด "เป๋าตัง (G-wallet)" ออกถาวรทุกรูปแบบ
     try:
         sheet_wallet = sh.worksheet("Wallets")
-        existing_w = [str(x).strip() for x in sheet_wallet.col_values(1)[1:] if pd.notnull(x) and str(x).strip() != ""]
-        for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]:
-            if def_w not in existing_w:
-                sheet_wallet.append_row([def_w])
+        try:
+            records_w = sheet_wallet.get_all_values()
+            clean_w_rows = [["ชื่อกระเป๋า"]]
+            for r in records_w[1:]:
+                if len(r) > 0 and str(r[0]).strip() != "" and "เป๋า" not in str(r[0]) and "g-wallet" not in str(r[0]).lower():
+                    clean_w_rows.append([str(r[0]).strip()])
+            sheet_wallet.clear()
+            sheet_wallet.update(range_name="A1", values=clean_w_rows)
+        except Exception:
+            pass
     except:
         sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
         sheet_wallet.append_row(["ชื่อกระเป๋า"])
@@ -279,12 +290,12 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 🔥 โหลดข้อมูล Wallets พร้อมกรองกระเป๋า "เป๋าตัง" ออกถาวรตามคำสั่ง
+# 🔥 โหลด Wallets กรองกระเป๋า "เป๋าตัง" ออกถาวร 100%
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
     str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() 
-    if pd.notnull(w) and str(w).strip() != "" and "เป๋าตัง" not in str(w) and "g-wallet" not in str(w).lower()
+    if pd.notnull(w) and str(w).strip() != "" and "เป๋า" not in str(w) and "g-wallet" not in str(w).lower()
 ]
 if not wallet_list:
     wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
@@ -533,10 +544,26 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (ซิงค์ตรงกับ Raw Data Editor 100% ครอบคลุม 2026-06-25 ถึง 2026-08-01 และปัจจุบัน)
+    # 📊 Tab 2: Dashboard
     # ==========================================
     with tab2:
         if not df.empty:
+            # 🔥 ตรวจจับเงินเดือนแม่ 7,500 บาท (2026-06-25) ที่หายไป หากไม่เจอ ให้แสดงปุ่มกดกู้คืนทันที
+            has_mom_7500 = False
+            for _, r_check in df.iterrows():
+                if "7500" in str(r_check['จำนวนเงิน']) and ("06-25" in str(r_check['วันที่']) or "6-25" in str(r_check['วันที่'])):
+                    has_mom_7500 = True
+                    break
+            
+            if not has_mom_7500:
+                with st.expander("🚨 พบสาเหตุยอดกรุงไทยติดลบ (-5,030.50 และ -6,811.21): แถวรับเงินเดือนแม่ 7,500 บาท (2026-06-25) หายไปจาก Google Sheets!", expanded=True):
+                    st.markdown("💡 เนื่องจากก่อนหน้านี้ระบบบันทึกทับโดยไม่มีแถวรับเงินเดือน 7,500 บาทแรกสุด ส่งผลให้ยอดกรุงไทยติดลบทันที **สามารถกดปุ่มสีส้มด้านล่างเพื่อกู้คืนข้อมูล 7,500 บาทลง Google Sheets อัตโนมัติในคลิกเดียวครับ!**")
+                    if st.button("⚡ กู้คืนยอดรับเงินเดือนแม่ 7,500 บาท (2026-06-25) เข้ากรุงไทยทันที", use_container_width=True):
+                        sheet.insert_row(["2026-06-25 00:00:00", "รายรับ", "เงินเดือน: จากแม่", 7500.0, "แม่โอนให้ใช้", "🏦 กรุงไทย"], 1)
+                        fetch_main_data.clear()
+                        st.success("🎉 กู้คืนยอดเงินเดือนแม่ 7,500 บาท เรียบร้อยแล้ว! ยอดกรุงไทยกลับมาเป็นบวกตามจริงแล้วครับ")
+                        st.rerun()
+
             df_chart = df.copy()
             
             cycles_data = fetch_cycles()
@@ -638,7 +665,6 @@ else:
                 mask = df_sub['ประเภท'].apply(mask_func).astype(bool)
                 return float(df_sub[mask]['จำนวนเงิน'].sum())
 
-            # 🔥 คำนวณยอดเงินแต่ละธนาคารแบบเป็นอิสระต่อกัน (Independent Wallets)
             wallet_balances = {w: 0.0 for w in wallet_list}
             for w in wallet_list:
                 if "ออมสิน" in w:
@@ -652,7 +678,6 @@ else:
                     w_out = safe_sum_by_mask(df_w, is_expense_type)
                     wallet_balances[w] = w_in - w_out
             
-            # 🔥 ประมวลผลการโอนย้ายระหว่างกระเป๋า
             if not df_cumulative.empty and 'ประเภท' in df_cumulative.columns:
                 mask_tr = df_cumulative['ประเภท'].apply(is_transfer_row).astype(bool)
                 trans_df = df_cumulative[mask_tr]
@@ -689,7 +714,7 @@ else:
 
             net_wealth_total = sum(wallet_balances.values())
 
-            # --- 💳 แสดงการ์ดธนาคาร (กรองเป๋าตังออกเรียบร้อย) ---
+            # --- 💳 แสดงการ์ดธนาคาร (กรองเป๋าตังออกเรียบร้อย 100%) ---
             card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
@@ -865,7 +890,7 @@ else:
             
             st.markdown("---")
             
-            # 🔥 Expense Analysis + ตารางอ้างอิงรายละเอียดบิลดิบตรงกับ Raw Data 100%
+            # 🔥 Expense Analysis
             expense_df = df_cycle[exp_mask].copy()
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
@@ -1091,7 +1116,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v57"
+                key="editor_goals_v58"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1114,7 +1139,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v57"
+                key="editor_wallets_v58"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1136,7 +1161,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v57")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v58")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1146,7 +1171,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v57")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v58")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1205,7 +1230,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v57"
+                key="editor_finance_v58"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
