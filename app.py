@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบ Clean-up ตัดเป๋าตัง และล็อกเวลา Cycle อัตโนมัติ
+# 🚀 ระบบ Smart Cache พร้อมคืนค่าเริ่มต้น 4 กระเป๋า (รวม เป๋าตัง G-wallet) แบบไม่บล็อกชื่อ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -153,25 +153,20 @@ def get_google_sheets():
         sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
 
-    # 🔥 ล้างรายชื่อในชีต Wallets ตัด "เป๋าตัง (G-wallet)" ออกถาวรทุกรูปแบบ
+    # 🔥 คืนสิทธิ์ให้เพิ่ม "เป๋าตัง (G-wallet)" ได้ตามปกติ ไม่มีการลบอัตโนมัติ
     try:
         sheet_wallet = sh.worksheet("Wallets")
-        try:
-            records_w = sheet_wallet.get_all_values()
-            clean_w_rows = [["ชื่อกระเป๋า"]]
-            for r in records_w[1:]:
-                if len(r) > 0 and str(r[0]).strip() != "" and "เป๋า" not in str(r[0]) and "g-wallet" not in str(r[0]).lower():
-                    clean_w_rows.append([str(r[0]).strip()])
-            sheet_wallet.clear()
-            sheet_wallet.update(range_name="A1", values=clean_w_rows)
-        except Exception:
-            pass
+        existing_w = [str(x).strip() for x in sheet_wallet.col_values(1)[1:] if pd.notnull(x) and str(x).strip() != ""]
+        for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]:
+            if def_w not in existing_w:
+                sheet_wallet.append_row([def_w])
     except:
         sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
         sheet_wallet.append_row(["ชื่อกระเป๋า"])
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
+        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -290,15 +285,15 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 🔥 โหลด Wallets กรองกระเป๋า "เป๋าตัง" ออกถาวร 100%
+# 🔥 โหลด Wallets (ปลดล็อก ไม่กรองเป๋าตังออกแล้ว)
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
     str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() 
-    if pd.notnull(w) and str(w).strip() != "" and "เป๋า" not in str(w) and "g-wallet" not in str(w).lower()
+    if pd.notnull(w) and str(w).strip() != ""
 ]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
 
 # 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
 goals_data = fetch_goals()
@@ -714,7 +709,7 @@ else:
 
             net_wealth_total = sum(wallet_balances.values())
 
-            # --- 💳 แสดงการ์ดธนาคาร (กรองเป๋าตังออกเรียบร้อย 100%) ---
+            # --- 💳 แสดงการ์ดธนาคาร ---
             card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
@@ -727,7 +722,7 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
-            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว
+            # 🔥 กล่องคาลิเบรท
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
                     st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
