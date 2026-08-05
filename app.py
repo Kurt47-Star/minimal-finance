@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมเพิ่ม 4 ธนาคารหลักให้อัตโนมัติ
+# 🚀 ระบบ Smart Cache (ตัดกระเป๋าเป๋าตังออก เหลือ 3 ธนาคารหลัก)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -133,9 +133,8 @@ def get_google_sheets():
     except:
         sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
-        # 🔥 ล็อกเวลา Cycle ให้ตรงตาม Raw Data 100%
-        sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-07-31 19:59:01", "CLOSED", 0.0, 2501.0])
-        sheet_cycle.append_row(["August 2026", "2026-08-01 17:21:34", "", "ACTIVE", 2501.0, 2501.0])
+        sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-07-31 23:59:59", "CLOSED", 0.0, 2501.0])
+        sheet_cycle.append_row(["August 2026", "2026-08-01 00:00:00", "", "ACTIVE", 2501.0, 2501.0])
 
     try:
         sheet_debt = sh.worksheet("Receivables")
@@ -153,7 +152,7 @@ def get_google_sheets():
     try:
         sheet_wallet = sh.worksheet("Wallets")
         existing_w = [str(x).strip() for x in sheet_wallet.col_values(1)[1:] if pd.notnull(x) and str(x).strip() != ""]
-        for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]:
+        for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]:
             if def_w not in existing_w:
                 sheet_wallet.append_row([def_w])
     except:
@@ -162,7 +161,6 @@ def get_google_sheets():
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
-        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -173,7 +171,6 @@ if sheet is None:
     st.stop()
 
 # --- ฟังก์ชันโหลดข้อมูลแยก Cache ---
-# 🔥 ใช้ sheet.get_all_values() เพื่อไม่ให้ gspread กลืนกินแถว 2026-06-25 (7500) ไปเป็นหัวตาราง!
 @st.cache_data(ttl=60)
 def fetch_main_data():
     return sheet.get_all_values()
@@ -217,7 +214,6 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 อ่านวันที่ตามมาตรฐานสากล ISO (YYYY-MM-DD) ก่อนเสมอ ห้ามสลับวัน/เดือน 100%
 def parse_clean_datetime(date_series):
     s = date_series.astype(str).str.strip()
     dt = pd.to_datetime(s, format='mixed', errors='coerce')
@@ -226,7 +222,6 @@ def parse_clean_datetime(date_series):
         dt = dt.fillna(dt_alt)
     return dt
 
-# 🔥 ระบบโหลดข้อมูลที่รับประกันว่าแถว 7500 จากแม่ จะไม่ถูกตัดทิ้ง 100%
 def load_data():
     records = fetch_main_data()
     if not records:
@@ -238,7 +233,6 @@ def load_data():
     df = df.iloc[:, :6]
     df.columns = ["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]
     
-    # ตัดทิ้งเฉพาะแถวที่เป็นคำว่า "วันที่" หรือแถวว่างจริง ๆ เท่านั้น
     df = df[df['วันที่'].astype(str).str.strip() != 'วันที่']
     df = df[df['วันที่'].astype(str).str.strip() != '']
     df = df.reset_index(drop=True)
@@ -285,19 +279,21 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 📌 โหลดข้อมูล Wallets
+# 🔥 โหลดข้อมูล Wallets พร้อมกรองกระเป๋า "เป๋าตัง" ออกถาวรตามคำสั่ง
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
-wallet_list = [str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() if pd.notnull(w) and str(w).strip() != ""]
+wallet_list = [
+    str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() 
+    if pd.notnull(w) and str(w).strip() != "" and "เป๋าตัง" not in str(w) and "g-wallet" not in str(w).lower()
+]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
 
 # 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
 goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
-# 🔥 ฟังก์ชันคำนวณเงินออมรวม
 def calculate_savings_metrics(df_source):
     if df_source.empty or 'ประเภท' not in df_source.columns:
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -678,9 +674,6 @@ else:
                             elif "ออมสิน" in w_clean or "aomsin" in w_clean:
                                 if "ออมสิน" in cat_str or "aomsin" in cat_str:
                                     to_w = w; break
-                            elif "เป๋าตัง" in w_clean or "g-wallet" in w_clean or "paotang" in w_clean:
-                                if "เป๋าตัง" in cat_str or "g-wallet" in cat_str or "paotang" in cat_str:
-                                    to_w = w; break
                             elif w_clean in cat_str:
                                 to_w = w; break
                         
@@ -696,7 +689,7 @@ else:
 
             net_wealth_total = sum(wallet_balances.values())
 
-            # --- 💳 แสดงการ์ดธนาคารครบทั้ง 4 ใบ + รวมเงินทั้งหมด (Net Wealth) ---
+            # --- 💳 แสดงการ์ดธนาคาร (กรองเป๋าตังออกเรียบร้อย) ---
             card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
@@ -712,7 +705,7 @@ else:
             # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
-                    st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57, เป๋าตัง 28.09) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
+                    st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
                     
                     with st.form("multi_wallet_calibrate_form", clear_on_submit=False):
                         target_balances = {}
@@ -1098,7 +1091,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v56"
+                key="editor_goals_v57"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1121,7 +1114,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v56"
+                key="editor_wallets_v57"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1143,7 +1136,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v56")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v57")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1153,7 +1146,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v56")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v57")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1212,7 +1205,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v56"
+                key="editor_finance_v57"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
