@@ -91,6 +91,22 @@ spreadsheet_name = "Minimal Finance Pro"
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
+        sheet_cycle = sh.worksheet("Cycles")
+        try:
+            sheet_cycle.resize(rows=50, cols=10)
+            headers = sheet_cycle.row_values(1)
+            if len(headers) < 6:
+                sheet_cycle.update_cell(1, 5, "ยอดยกมา")
+                sheet_cycle.update_cell(1, 6, "เงินจริงกรุงไทย")
+        except Exception:
+            pass
+    except:
+        sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
+        sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
+        # 🔥 ล็อกเวลาจริงตามไฟล์ Raw Data 100%
+        sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-07-31 19:59:01", "CLOSED", 0.0, 2501.0])
+        sheet_cycle.append_row(["August 2026", "2026-08-01 17:21:34", "", "ACTIVE", 2501.0, 2501.0])
+    try:
         sh = client.open(spreadsheet_name)
     except Exception:
         return None, None, None, None, None, None, None, None
@@ -229,6 +245,14 @@ def parse_clean_datetime(date_series):
     return dt
 
 def load_data():
+    # 🔥 อ่านวันที่ตามฟอร์แมต ISO ของ Raw Data เสมอ
+def parse_clean_datetime(date_series):
+    s = date_series.astype(str).str.strip()
+    dt = pd.to_datetime(s, errors='coerce')
+    if dt.isna().any():
+        dt_alt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+        dt = dt.fillna(dt_alt)
+    return dt
     records = fetch_main_data()
     if records:
         df = pd.DataFrame(records)
