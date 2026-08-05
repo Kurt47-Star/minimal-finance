@@ -133,7 +133,7 @@ def get_google_sheets():
     except:
         sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
-        # 🔥 ล็อกเวลาจริงตามไฟล์ Raw Data 100%
+        # 🔥 ล็อกเวลา Cycle ให้ตรงตาม Raw Data 100%
         sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-07-31 19:59:01", "CLOSED", 0.0, 2501.0])
         sheet_cycle.append_row(["August 2026", "2026-08-01 17:21:34", "", "ACTIVE", 2501.0, 2501.0])
 
@@ -173,7 +173,7 @@ if sheet is None:
     st.stop()
 
 # --- ฟังก์ชันโหลดข้อมูลแยก Cache ---
-# 🔥 ใช้ get_all_values() เพื่อไม่ให้เกิด KeyError ไม่ว่าชีตจะไม่มีหัวตารางหรือหัวตารางอยู่บรรทัดไหน
+# 🔥 ใช้ sheet.get_all_values() เพื่อไม่ให้ gspread กลืนกินแถว 2026-06-25 (7500) ไปเป็นหัวตาราง!
 @st.cache_data(ttl=60)
 def fetch_main_data():
     return sheet.get_all_values()
@@ -217,7 +217,7 @@ def parse_custom_time(time_str, default_time):
         pass
     return default_time
 
-# 🔥 อ่านวันที่ตามมาตรฐาน ISO (YYYY-MM-DD) ก่อนเสมอ ห้ามสลับวัน/เดือน 100%
+# 🔥 อ่านวันที่ตามมาตรฐานสากล ISO (YYYY-MM-DD) ก่อนเสมอ ห้ามสลับวัน/เดือน 100%
 def parse_clean_datetime(date_series):
     s = date_series.astype(str).str.strip()
     dt = pd.to_datetime(s, format='mixed', errors='coerce')
@@ -226,19 +226,19 @@ def parse_clean_datetime(date_series):
         dt = dt.fillna(dt_alt)
     return dt
 
+# 🔥 ระบบโหลดข้อมูลที่รับประกันว่าแถว 7500 จากแม่ จะไม่ถูกตัดทิ้ง 100%
 def load_data():
     records = fetch_main_data()
     if not records:
         return pd.DataFrame(columns=["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า", "หมวดหมู่หลัก", "หมวดหมู่ย่อย", "วันเวลา", "วันที่_date"])
     
     df = pd.DataFrame(records)
-    # รับประกันว่ามีอย่างน้อย 6 คอลัมน์ และตั้งชื่อคอลัมน์มาตรฐานเสมอ (ไม่มี KeyError แน่นอน 100%)
     while len(df.columns) < 6:
         df[len(df.columns)] = ""
     df = df.iloc[:, :6]
     df.columns = ["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]
     
-    # กรองแถวหัวตารางที่หลงเหลืออยู่หรือแถวว่างออก
+    # ตัดทิ้งเฉพาะแถวที่เป็นคำว่า "วันที่" หรือแถวว่างจริง ๆ เท่านั้น
     df = df[df['วันที่'].astype(str).str.strip() != 'วันที่']
     df = df[df['วันที่'].astype(str).str.strip() != '']
     df = df.reset_index(drop=True)
@@ -582,7 +582,6 @@ else:
             selected_kt_real = 0.0
             selected_row_idx = None
             
-            # 🔥 กรองวันที่ของ Cycle โดยใช้คอลัมน์ 'วันเวลา' ซึ่งรับประกันวันที่ 2026-06-25 ถึง 2026-08-01 ตรงเป๊ะ 100%
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 for label, start_str, end_str, carry_val, kt_val, r_idx in cycle_options:
                     if label == selected_cycle_label:
