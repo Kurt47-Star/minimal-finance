@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบ Clean-up ตัดเป๋าตัง และล็อกเวลา Cycle อัตโนมัติ
+# 🚀 ระบบ Smart Cache
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,7 +120,6 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
-    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (July จบ 31 ก.ค. และ August เริ่ม 1 ส.ค.)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
@@ -153,25 +152,15 @@ def get_google_sheets():
         sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
 
-    # 🔥 ล้างรายชื่อในชีต Wallets ตัด "เป๋าตัง (G-wallet)" ออกถาวรทุกรูปแบบ
     try:
         sheet_wallet = sh.worksheet("Wallets")
-        try:
-            records_w = sheet_wallet.get_all_values()
-            clean_w_rows = [["ชื่อกระเป๋า"]]
-            for r in records_w[1:]:
-                if len(r) > 0 and str(r[0]).strip() != "" and "เป๋า" not in str(r[0]) and "g-wallet" not in str(r[0]).lower():
-                    clean_w_rows.append([str(r[0]).strip()])
-            sheet_wallet.clear()
-            sheet_wallet.update(range_name="A1", values=clean_w_rows)
-        except Exception:
-            pass
     except:
         sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
         sheet_wallet.append_row(["ชื่อกระเป๋า"])
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
+        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -290,15 +279,15 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 🔥 โหลด Wallets พร้อมกรองเป๋าตังออกถาวร
+# 🔥 ปลดล็อก 100%: อ่านชื่อกระเป๋าทุกรายการตามที่ผู้ใช้บันทึกจริง ไม่แบนชื่อใดๆ ทั้งสิ้น
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
     str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() 
-    if pd.notnull(w) and str(w).strip() != "" and "เป๋า" not in str(w) and "g-wallet" not in str(w).lower()
+    if pd.notnull(w) and str(w).strip() != ""
 ]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
 
 # 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
 goals_data = fetch_goals()
@@ -544,11 +533,10 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (เพิ่มปุ่ม 1-Click กู้คืนเงินแม่ 7500 และกราฟ Periodic Bar Analysis)
+    # 📊 Tab 2: Dashboard
     # ==========================================
     with tab2:
         if not df.empty:
-            # 🔥 ตรวจจับเงินเดือนแม่ 7,500 บาท (2026-06-25) ที่หายไป หากไม่เจอ ให้แสดงปุ่มกดกู้คืนทันที
             has_mom_7500 = False
             for _, r_check in df.iterrows():
                 if "7500" in str(r_check['จำนวนเงิน']) and ("06-25" in str(r_check['วันที่']) or "6-25" in str(r_check['วันที่'])):
@@ -714,7 +702,7 @@ else:
 
             net_wealth_total = sum(wallet_balances.values())
 
-            # --- 💳 แสดงการ์ดธนาคาร (กรองเป๋าตังออกเรียบร้อย 100%) ---
+            # --- 💳 แสดงการ์ดธนาคารครบถ้วนตามจริงที่ผู้ใช้กำหนด ---
             card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
@@ -727,7 +715,7 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
-            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว
+            # 🔥 กล่องคาลิเบรท
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
                     st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
@@ -914,7 +902,6 @@ else:
             if not df_bar_raw.empty:
                 df_bar_raw['ประเภท_clean'] = df_bar_raw['ประเภท'].apply(clean_type_name)
 
-                # กำหนดช่วงจัดกลุ่มเวลา
                 if "รายวัน" in bar_timeframe:
                     df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['วันเวลา'].dt.strftime('%d %b %Y')
                     df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.date
@@ -928,11 +915,9 @@ else:
                     df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('Y').dt.start_time
                     df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('%Y')
 
-                # โหมด 1: รายจ่าย (Stacked Bar เจาะลึกรายละเอียดบิลที่ซื้ออะไรไปบ้าง)
                 if "รายจ่าย" in bar_metric_mode:
                     df_exp_bar = df_bar_raw[df_bar_raw['ประเภท_clean'] == 'รายจ่าย'].copy()
                     if not df_exp_bar.empty:
-                        # จัดกลุ่มตาม ช่วงเวลา, หมวดหมู่หลัก, หมวดหมู่ย่อย และ รายละเอียด เพื่อให้ Hover โชว์ครบ!
                         exp_stacked = df_exp_bar.groupby(['sort_key', 'ช่วงเวลา_str', 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
                         exp_stacked = exp_stacked.sort_values(by=['sort_key', 'จำนวนเงิน'], ascending=[True, False])
 
@@ -963,7 +948,6 @@ else:
                     else:
                         st.info("ไม่มีข้อมูลรายจ่ายในช่วงเวลานี้ครับ")
 
-                # โหมด 2: เปรียบเทียบทุกประเภท (Grouped Bar Chart)
                 elif "เปรียบเทียบทุกประเภท" in bar_metric_mode:
                     grouped_bar_data = df_bar_raw.groupby(['sort_key', 'ช่วงเวลา_str', 'ประเภท_clean'], as_index=False)['จำนวนเงิน'].sum()
                     grouped_bar_data = grouped_bar_data[grouped_bar_data['ประเภท_clean'].isin(['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน'])]
@@ -990,7 +974,6 @@ else:
                     else:
                         st.info("ไม่มีข้อมูลแสดงผลในช่วงเวลานี้ครับ")
 
-                # โหมด 3: รายรับ / เงินออม / เงินลงทุน เดี่ยวๆ
                 else:
                     target_type = "รายรับ" if "รายรับ" in bar_metric_mode else ("เงินออม" if "เงินออม" in bar_metric_mode else "เงินลงทุน")
                     df_single_bar = df_bar_raw[df_bar_raw['ประเภท_clean'] == target_type].copy()
