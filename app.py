@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache (แก้ปัญหาเป๋าตังเด้งกลับมา: เติมค่าเริ่มต้นก็ต่อเมื่อชีตว่างเปล่า 0 แถวเท่านั้น)
+# 🚀 ระบบ Smart Cache พร้อมระบบ Clean-up ตัดเป๋าตัง และล็อกเวลา Cycle อัตโนมัติ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,6 +120,7 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
+    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (July จบ 31 ก.ค. และ August เริ่ม 1 ส.ค.)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
@@ -152,13 +153,19 @@ def get_google_sheets():
         sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
 
-    # 🔥 แก้ไขปัญหาผีหลอกเป๋าตัง: จะเติมกระเป๋าเริ่มต้นเฉพาะเมื่อตารางว่างเปล่าเท่านั้น (0 แถว) ห้ามเติมแทรกถาวร!
+    # 🔥 ล้างรายชื่อในชีต Wallets ตัด "เป๋าตัง (G-wallet)" ออกถาวรทุกรูปแบบ
     try:
         sheet_wallet = sh.worksheet("Wallets")
-        existing_w = [str(x).strip() for x in sheet_wallet.col_values(1)[1:] if pd.notnull(x) and str(x).strip() != ""]
-        if len(existing_w) == 0:
-            for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]:
-                sheet_wallet.append_row([def_w])
+        try:
+            records_w = sheet_wallet.get_all_values()
+            clean_w_rows = [["ชื่อกระเป๋า"]]
+            for r in records_w[1:]:
+                if len(r) > 0 and str(r[0]).strip() != "" and "เป๋า" not in str(r[0]) and "g-wallet" not in str(r[0]).lower():
+                    clean_w_rows.append([str(r[0]).strip()])
+            sheet_wallet.clear()
+            sheet_wallet.update(range_name="A1", values=clean_w_rows)
+        except Exception:
+            pass
     except:
         sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
         sheet_wallet.append_row(["ชื่อกระเป๋า"])
@@ -283,12 +290,12 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 🔥 โหลด Wallets (ไม่มีเป๋าตังมารังควานอีกต่อไป 100%)
+# 🔥 โหลด Wallets พร้อมกรองเป๋าตังออกถาวร
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
     str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() 
-    if pd.notnull(w) and str(w).strip() != "" and "เป๋าตัง" not in str(w) and "g-wallet" not in str(w).lower()
+    if pd.notnull(w) and str(w).strip() != "" and "เป๋า" not in str(w) and "g-wallet" not in str(w).lower()
 ]
 if not wallet_list:
     wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
@@ -537,10 +544,11 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard (อัปเกรด Periodic Financial Analysis แบบกราฟแท่งเปรียบเทียบ)
+    # 📊 Tab 2: Dashboard (เพิ่มปุ่ม 1-Click กู้คืนเงินแม่ 7500 และกราฟ Periodic Bar Analysis)
     # ==========================================
     with tab2:
         if not df.empty:
+            # 🔥 ตรวจจับเงินเดือนแม่ 7,500 บาท (2026-06-25) ที่หายไป หากไม่เจอ ให้แสดงปุ่มกดกู้คืนทันที
             has_mom_7500 = False
             for _, r_check in df.iterrows():
                 if "7500" in str(r_check['จำนวนเงิน']) and ("06-25" in str(r_check['วันที่']) or "6-25" in str(r_check['วันที่'])):
@@ -612,6 +620,7 @@ else:
                             df_cycle = df_cycle[df_cycle['วันเวลา'] >= start_dt]
                         break
 
+            # 🔥 1) กรองรายการเงินลงทุน (Investments)
             inv_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
                 df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
@@ -619,14 +628,17 @@ else:
             ) & ~df_cycle['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
             inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
 
+            # 🔥 2) กรองรายการเงินออม (Savings Flow)
             _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
+            # 💡 3) รายรับ (Income)
             inc_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
                 ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
             )
             inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
+            # 🔥 4) รายจ่าย (Expenses)
             exp_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
                 ~inv_mask &
@@ -785,15 +797,13 @@ else:
 
             st.markdown("---")
 
-            # 🔥 อัปเกรดเป็น Periodic Financial Analysis: เลือกได้ทั้ง "กราฟแท่งเปรียบเทียบ", "กราฟแท่งสะสม" และ "กราฟเส้น"
-            col_trend_title, col_trend_filter = st.columns([1.5, 2.5])
+            col_trend_title, col_trend_filter = st.columns([1.5, 2])
             with col_trend_title:
-                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📈 / 📊 Periodic Financial Analysis (วิเคราะห์แนวโน้มและสถิติรายคาบ)</p>", unsafe_allow_html=True)
+                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis (Stock Style)</p>", unsafe_allow_html=True)
             with col_trend_filter:
-                c_mode, c_tf, c_ms = st.columns([1.3, 1.1, 2])
-                chart_type = c_mode.selectbox("รูปแบบกราฟ:", ["📊 กราฟแท่งเปรียบเทียบ (Grouped Bar)", "📈 กราฟเส้นแนวโน้ม (Line Chart)", "📚 กราฟแท่งสะสม (Stacked Bar)"], label_visibility="collapsed")
+                c_tf, c_ms = st.columns([1.2, 2])
                 time_frame = c_tf.selectbox("Timeframe:", ["รายวัน (1D)", "รายสัปดาห์ (1W)", "รายเดือน (1M)", "รายปี (1Y)", "ราย 5 ปี (5Y)"], label_visibility="collapsed")
-                visible_metrics = c_ms.multiselect("เลือกสถิติที่ต้องการวิเคราะห์:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน"], label_visibility="collapsed")
+                visible_metrics = c_ms.multiselect("เลือกเส้นวิเคราะห์คงเหลือ:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
             
             today = datetime.datetime.now(TZ_TH).date()
             df_trend = df_chart.copy()
@@ -861,14 +871,8 @@ else:
                         filtered_trend_df = clean_trend_df[clean_trend_df['ประเภท'].isin(visible_metrics)]
                         
                         if not filtered_trend_df.empty:
-                            if "กราฟแท่งเปรียบเทียบ" in chart_type:
-                                fig_trend = px.bar(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, barmode='group')
-                            elif "กราฟแท่งสะสม" in chart_type:
-                                fig_trend = px.bar(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, barmode='relative')
-                            else:
-                                fig_trend = px.line(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
-                                fig_trend.update_traces(line=dict(width=2), marker=dict(size=5, line=dict(width=1, color="white")))
-                                
+                            fig_trend = px.line(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
+                            fig_trend.update_traces(line=dict(width=2), marker=dict(size=5, line=dict(width=1, color="white")))
                             fig_trend.update_layout(
                                 plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
                                 xaxis=dict(showgrid=False, title="", showline=False, tickformat=x_tick_format, tickfont=dict(family='Poppins', size=11)),
@@ -878,15 +882,148 @@ else:
                             )
                             st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
                         else:
-                            st.info("กรุณาเลือกเส้นหรือแท่งกราฟอย่างน้อย 1 รายการเพื่อแสดงผล")
+                            st.info("กรุณาเลือกเส้นกราฟอย่างน้อย 1 เส้นเพื่อแสดงผล")
                 else:
                     st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในช่วงไทม์เฟรมนี้")
             else:
                 st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในช่วงไทม์เฟรมนี้")
             
             st.markdown("---")
+
+            # ==========================================
+            # 🔥 📊 Periodic Bar Analysis (วิเคราะห์กราฟแท่งรายวัน/รายสัปดาห์/รายปี & เจาะลึกบิลรายจ่าย)
+            # ==========================================
+            col_bar_title, col_bar_filter = st.columns([1.5, 2.5])
+            with col_bar_title:
+                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Periodic Bar Analysis (กราฟแท่งตามช่วงเวลา)</p>", unsafe_allow_html=True)
+            with col_bar_filter:
+                c_bf1, c_bf2 = st.columns([1.2, 2.3])
+                bar_timeframe = c_bf1.selectbox("ช่วงเวลา (Timeframe):", ["รายวัน (Daily)", "รายสัปดาห์ (Weekly)", "รายเดือน (Monthly)", "รายปี (Yearly)"], index=0, key="bar_tf_select")
+                bar_metric_mode = c_bf2.selectbox("เลือกมิติข้อมูลที่ต้องการดู:", [
+                    "💸 รายจ่าย (Expenses - เจาะลึกรายละเอียดบิล)",
+                    "📥 รายรับ (Income)",
+                    "🐷 เงินออม (Savings)",
+                    "📈 เงินลงทุน (Investments)",
+                    "📊 เปรียบเทียบทุกประเภท (Grouped Bar)"
+                ], index=0, key="bar_metric_select")
+
+            df_bar_raw = df_cycle.copy() if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)" else df_chart.copy()
+            df_bar_raw = df_bar_raw.dropna(subset=['วันเวลา'])
+            df_bar_raw = df_bar_raw.sort_values(by='วันเวลา')
+
+            if not df_bar_raw.empty:
+                df_bar_raw['ประเภท_clean'] = df_bar_raw['ประเภท'].apply(clean_type_name)
+
+                # กำหนดช่วงจัดกลุ่มเวลา
+                if "รายวัน" in bar_timeframe:
+                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['วันเวลา'].dt.strftime('%d %b %Y')
+                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.date
+                elif "รายสัปดาห์" in bar_timeframe:
+                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('W').dt.start_time
+                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('W%W (%d %b %Y)')
+                elif "รายเดือน" in bar_timeframe:
+                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('M').dt.start_time
+                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('%b %Y')
+                else:
+                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('Y').dt.start_time
+                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('%Y')
+
+                # โหมด 1: รายจ่าย (Stacked Bar เจาะลึกรายละเอียดบิลที่ซื้ออะไรไปบ้าง)
+                if "รายจ่าย" in bar_metric_mode:
+                    df_exp_bar = df_bar_raw[df_bar_raw['ประเภท_clean'] == 'รายจ่าย'].copy()
+                    if not df_exp_bar.empty:
+                        # จัดกลุ่มตาม ช่วงเวลา, หมวดหมู่หลัก, หมวดหมู่ย่อย และ รายละเอียด เพื่อให้ Hover โชว์ครบ!
+                        exp_stacked = df_exp_bar.groupby(['sort_key', 'ช่วงเวลา_str', 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
+                        exp_stacked = exp_stacked.sort_values(by=['sort_key', 'จำนวนเงิน'], ascending=[True, False])
+
+                        fig_bar_exp = px.bar(
+                            exp_stacked, 
+                            x='ช่วงเวลา_str', 
+                            y='จำนวนเงิน', 
+                            color='หมวดหมู่หลัก', 
+                            color_discrete_sequence=SUB_CAT_PALETTE,
+                            hover_data={'หมวดหมู่ย่อย': True, 'รายละเอียด': True, 'sort_key': False},
+                            title=""
+                        )
+                        fig_bar_exp.update_traces(marker_line_width=0, opacity=0.95)
+                        fig_bar_exp.update_layout(
+                            barmode='stack',
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(showgrid=False, title=""),
+                            yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
+                            margin=dict(t=10, b=0, l=0, r=0)
+                        )
+                        st.plotly_chart(fig_bar_exp, use_container_width=True, theme="streamlit")
+
+                        with st.expander("📋 ตารางแจกแจงบิลรายจ่ายที่ใช้ไปในช่วงเวลานี้ (Expense Detail Breakdown)", expanded=False):
+                            st.caption("💡 สามารถดูรายละเอียดและข้อความบันทึก/Note ว่าซื้ออะไรไปบ้างในแต่ละบิลครับ")
+                            show_exp_table = df_exp_bar[['วันที่', 'หมวดหมู่', 'รายละเอียด', 'จำนวนเงิน', 'กระเป๋า']].sort_values(by='วันที่', ascending=False)
+                            st.dataframe(show_exp_table, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("ไม่มีข้อมูลรายจ่ายในช่วงเวลานี้ครับ")
+
+                # โหมด 2: เปรียบเทียบทุกประเภท (Grouped Bar Chart)
+                elif "เปรียบเทียบทุกประเภท" in bar_metric_mode:
+                    grouped_bar_data = df_bar_raw.groupby(['sort_key', 'ช่วงเวลา_str', 'ประเภท_clean'], as_index=False)['จำนวนเงิน'].sum()
+                    grouped_bar_data = grouped_bar_data[grouped_bar_data['ประเภท_clean'].isin(['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน'])]
+                    grouped_bar_data = grouped_bar_data.sort_values(by='sort_key')
+
+                    if not grouped_bar_data.empty:
+                        fig_bar_group = px.bar(
+                            grouped_bar_data, 
+                            x='ช่วงเวลา_str', 
+                            y='จำนวนเงิน', 
+                            color='ประเภท_clean',
+                            color_discrete_map=HONEY_POT_MAP,
+                            barmode='group'
+                        )
+                        fig_bar_group.update_traces(marker_line_width=0, opacity=0.95)
+                        fig_bar_group.update_layout(
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(showgrid=False, title=""),
+                            yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
+                            margin=dict(t=10, b=0, l=0, r=0)
+                        )
+                        st.plotly_chart(fig_bar_group, use_container_width=True, theme="streamlit")
+                    else:
+                        st.info("ไม่มีข้อมูลแสดงผลในช่วงเวลานี้ครับ")
+
+                # โหมด 3: รายรับ / เงินออม / เงินลงทุน เดี่ยวๆ
+                else:
+                    target_type = "รายรับ" if "รายรับ" in bar_metric_mode else ("เงินออม" if "เงินออม" in bar_metric_mode else "เงินลงทุน")
+                    df_single_bar = df_bar_raw[df_bar_raw['ประเภท_clean'] == target_type].copy()
+                    if not df_single_bar.empty:
+                        single_stacked = df_single_bar.groupby(['sort_key', 'ช่วงเวลา_str', 'หมวดหมู่หลัก', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
+                        single_stacked = single_stacked.sort_values(by=['sort_key', 'จำนวนเงิน'], ascending=[True, False])
+
+                        fig_bar_single = px.bar(
+                            single_stacked, 
+                            x='ช่วงเวลา_str', 
+                            y='จำนวนเงิน', 
+                            color='หมวดหมู่หลัก',
+                            color_discrete_sequence=SUB_CAT_PALETTE,
+                            hover_data={'รายละเอียด': True, 'sort_key': False}
+                        )
+                        fig_bar_single.update_traces(marker_line_width=0, opacity=0.95)
+                        fig_bar_single.update_layout(
+                            barmode='stack',
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(showgrid=False, title=""),
+                            yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
+                            margin=dict(t=10, b=0, l=0, r=0)
+                        )
+                        st.plotly_chart(fig_bar_single, use_container_width=True, theme="streamlit")
+                    else:
+                        st.info(f"ไม่มีข้อมูล '{target_type}' ในช่วงเวลานี้ครับ")
+            else:
+                st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในรอบเดือนนี้ครับ")
+
+            st.markdown("---")
             
-            # 🔥 Expense Analysis
+            # 🔥 Expense Analysis + ตารางอ้างอิงรายละเอียดบิลดิบตรงกับ Raw Data 100%
             expense_df = df_cycle[exp_mask].copy()
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
