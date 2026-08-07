@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมคืนค่าเริ่มต้น 4 กระเป๋า (รวม เป๋าตัง G-wallet) แบบไม่บล็อกชื่อ
+# 🚀 ระบบ Smart Cache (แก้ปัญหาเป๋าตังเด้งกลับมา: เติมค่าเริ่มต้นก็ต่อเมื่อชีตว่างเปล่า 0 แถวเท่านั้น)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,7 +120,6 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
-    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (July จบ 31 ก.ค. และ August เริ่ม 1 ส.ค.)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
@@ -153,12 +152,12 @@ def get_google_sheets():
         sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
         sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
 
-    # 🔥 คืนสิทธิ์ให้เพิ่ม "เป๋าตัง (G-wallet)" ได้ตามปกติ ไม่มีการลบอัตโนมัติ
+    # 🔥 แก้ไขปัญหาผีหลอกเป๋าตัง: จะเติมกระเป๋าเริ่มต้นเฉพาะเมื่อตารางว่างเปล่าเท่านั้น (0 แถว) ห้ามเติมแทรกถาวร!
     try:
         sheet_wallet = sh.worksheet("Wallets")
         existing_w = [str(x).strip() for x in sheet_wallet.col_values(1)[1:] if pd.notnull(x) and str(x).strip() != ""]
-        for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]:
-            if def_w not in existing_w:
+        if len(existing_w) == 0:
+            for def_w in ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]:
                 sheet_wallet.append_row([def_w])
     except:
         sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
@@ -166,7 +165,6 @@ def get_google_sheets():
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
-        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -285,15 +283,15 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 🔥 โหลด Wallets (ปลดล็อก ไม่กรองเป๋าตังออกแล้ว)
+# 🔥 โหลด Wallets (ไม่มีเป๋าตังมารังควานอีกต่อไป 100%)
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
     str(w).strip() for w in df_wallets["ชื่อกระเป๋า"].tolist() 
-    if pd.notnull(w) and str(w).strip() != ""
+    if pd.notnull(w) and str(w).strip() != "" and "เป๋าตัง" not in str(w) and "g-wallet" not in str(w).lower()
 ]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
 
 # 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
 goals_data = fetch_goals()
@@ -539,11 +537,10 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard
+    # 📊 Tab 2: Dashboard (อัปเกรด Periodic Financial Analysis แบบกราฟแท่งเปรียบเทียบ)
     # ==========================================
     with tab2:
         if not df.empty:
-            # 🔥 ตรวจจับเงินเดือนแม่ 7,500 บาท (2026-06-25) ที่หายไป หากไม่เจอ ให้แสดงปุ่มกดกู้คืนทันที
             has_mom_7500 = False
             for _, r_check in df.iterrows():
                 if "7500" in str(r_check['จำนวนเงิน']) and ("06-25" in str(r_check['วันที่']) or "6-25" in str(r_check['วันที่'])):
@@ -615,7 +612,6 @@ else:
                             df_cycle = df_cycle[df_cycle['วันเวลา'] >= start_dt]
                         break
 
-            # 🔥 1) กรองรายการเงินลงทุน (Investments)
             inv_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
                 df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
@@ -623,17 +619,14 @@ else:
             ) & ~df_cycle['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
             inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 2) กรองรายการเงินออม (Savings Flow)
             _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
-            # 💡 3) รายรับ (Income)
             inc_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
                 ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
             )
             inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 4) รายจ่าย (Expenses)
             exp_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
                 ~inv_mask &
@@ -709,7 +702,7 @@ else:
 
             net_wealth_total = sum(wallet_balances.values())
 
-            # --- 💳 แสดงการ์ดธนาคาร ---
+            # --- 💳 แสดงการ์ดธนาคาร (กรองเป๋าตังออกเรียบร้อย 100%) ---
             card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
@@ -722,7 +715,7 @@ else:
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
             primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
-            # 🔥 กล่องคาลิเบรท
+            # 🔥 กล่องคาลิเบรท: ซิงค์ยอดจริงของทุกธนาคารในคลิกเดียว
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
                     st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
@@ -792,13 +785,15 @@ else:
 
             st.markdown("---")
 
-            col_trend_title, col_trend_filter = st.columns([1.5, 2])
+            # 🔥 อัปเกรดเป็น Periodic Financial Analysis: เลือกได้ทั้ง "กราฟแท่งเปรียบเทียบ", "กราฟแท่งสะสม" และ "กราฟเส้น"
+            col_trend_title, col_trend_filter = st.columns([1.5, 2.5])
             with col_trend_title:
-                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>Trend Analysis (Stock Style)</p>", unsafe_allow_html=True)
+                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📈 / 📊 Periodic Financial Analysis (วิเคราะห์แนวโน้มและสถิติรายคาบ)</p>", unsafe_allow_html=True)
             with col_trend_filter:
-                c_tf, c_ms = st.columns([1.2, 2])
+                c_mode, c_tf, c_ms = st.columns([1.3, 1.1, 2])
+                chart_type = c_mode.selectbox("รูปแบบกราฟ:", ["📊 กราฟแท่งเปรียบเทียบ (Grouped Bar)", "📈 กราฟเส้นแนวโน้ม (Line Chart)", "📚 กราฟแท่งสะสม (Stacked Bar)"], label_visibility="collapsed")
                 time_frame = c_tf.selectbox("Timeframe:", ["รายวัน (1D)", "รายสัปดาห์ (1W)", "รายเดือน (1M)", "รายปี (1Y)", "ราย 5 ปี (5Y)"], label_visibility="collapsed")
-                visible_metrics = c_ms.multiselect("เลือกเส้นวิเคราะห์คงเหลือ:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินสุทธิ"])
+                visible_metrics = c_ms.multiselect("เลือกสถิติที่ต้องการวิเคราะห์:", ["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน", "เงินสุทธิ"], default=["รายรับ", "รายจ่าย", "เงินออม", "เงินลงทุน"], label_visibility="collapsed")
             
             today = datetime.datetime.now(TZ_TH).date()
             df_trend = df_chart.copy()
@@ -866,8 +861,14 @@ else:
                         filtered_trend_df = clean_trend_df[clean_trend_df['ประเภท'].isin(visible_metrics)]
                         
                         if not filtered_trend_df.empty:
-                            fig_trend = px.line(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
-                            fig_trend.update_traces(line=dict(width=2), marker=dict(size=5, line=dict(width=1, color="white")))
+                            if "กราฟแท่งเปรียบเทียบ" in chart_type:
+                                fig_trend = px.bar(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, barmode='group')
+                            elif "กราฟแท่งสะสม" in chart_type:
+                                fig_trend = px.bar(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, barmode='relative')
+                            else:
+                                fig_trend = px.line(filtered_trend_df, x='เวลา', y='จำนวนเงิน', color='ประเภท', color_discrete_map=HONEY_POT_MAP, markers=True, line_shape='spline')
+                                fig_trend.update_traces(line=dict(width=2), marker=dict(size=5, line=dict(width=1, color="white")))
+                                
                             fig_trend.update_layout(
                                 plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
                                 xaxis=dict(showgrid=False, title="", showline=False, tickformat=x_tick_format, tickfont=dict(family='Poppins', size=11)),
@@ -877,7 +878,7 @@ else:
                             )
                             st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
                         else:
-                            st.info("กรุณาเลือกเส้นกราฟอย่างน้อย 1 เส้นเพื่อแสดงผล")
+                            st.info("กรุณาเลือกเส้นหรือแท่งกราฟอย่างน้อย 1 รายการเพื่อแสดงผล")
                 else:
                     st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในช่วงไทม์เฟรมนี้")
             else:
