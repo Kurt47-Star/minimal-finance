@@ -298,7 +298,7 @@ wallet_list = [
     if pd.notnull(w) and str(w).strip() != ""
 ]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
 
 # 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
 goals_data = fetch_goals()
@@ -729,7 +729,7 @@ else:
             # 🔥 กล่องคาลิเบรท
             if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
                 with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
-                    st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ (เช่น กรุงไทย 2475.50, ทรูมันนี่ 77.35, ออมสิน 538.57) แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
+                    st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
                     
                     with st.form("multi_wallet_calibrate_form", clear_on_submit=False):
                         target_balances = {}
@@ -797,7 +797,7 @@ else:
             st.markdown("---")
 
             # ==========================================
-            # 🔥 📊 Periodic Bar Analysis (วิเคราะห์กราฟแท่งและค่าเฉลี่ยแบบลึก)
+            # 🔥 📊 Periodic Bar Analysis (วิเคราะห์กราฟแท่งและค่าเฉลี่ยแบบลึก + แสดงยอดรวมบนแท่ง)
             # ==========================================
             def clean_type_name(t_str):
                 t = str(t_str).strip()
@@ -875,7 +875,7 @@ else:
                         unique_periods = df_bar_metric['sort_key'].nunique()
                         avg_amt = total_amt / unique_periods if unique_periods > 0 else 0
                         
-                        st.markdown(f"**💡 สรุปยอดรวมที่เลือก:** ทั้งหมด **฿{total_amt:,.2f}** | ค่าเฉลี่ย **฿{avg_amt:,.2f} / {time_unit_label}** (คิดจาก {unique_periods} {time_unit_label}ที่มีข้อมูล)")
+                        st.markdown(f"**💡 สรุปยอดรวมที่เลือก:** ทั้งหมด **฿{total_amt:,.2f}** | เฉลี่ย **฿{avg_amt:,.2f} / {time_unit_label}** (จาก {unique_periods} {time_unit_label})")
 
                         if "เปรียบเทียบทุกประเภท" in bar_metric_mode:
                             grouped_bar_data = df_bar_metric.groupby(['sort_key', 'ช่วงเวลา_str', 'ประเภท_clean'], as_index=False)['จำนวนเงิน'].sum()
@@ -907,12 +907,24 @@ else:
                             )
                             fig_bar.update_traces(texttemplate='฿%{text:,.0f}', textposition='inside', insidetextanchor='middle')
 
+                            # 🔥 สร้างตัวเลข "ยอดรวมสุทธิ" แปะไว้บนยอดสูงสุดของแต่ละแท่ง
+                            total_by_period = stacked_data.groupby(['sort_key', 'ช่วงเวลา_str'], as_index=False)['จำนวนเงิน'].sum()
+                            for _, r in total_by_period.iterrows():
+                                fig_bar.add_annotation(
+                                    x=r['ช่วงเวลา_str'],
+                                    y=r['จำนวนเงิน'],
+                                    text=f"<b>฿{r['จำนวนเงิน']:,.0f}</b>",
+                                    showarrow=False,
+                                    yshift=14,
+                                    font=dict(size=14)
+                                )
+
                         fig_bar.update_layout(
                             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
                             xaxis=dict(showgrid=False, title=""),
                             yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
-                            margin=dict(t=10, b=0, l=0, r=0),
+                            margin=dict(t=30, b=0, l=0, r=0),
                             uniformtext_minsize=9, uniformtext_mode='hide'
                         )
                         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
@@ -1123,7 +1135,7 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v59"
+                key="editor_goals_v60"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1146,7 +1158,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v59"
+                key="editor_wallets_v60"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1168,7 +1180,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v59")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v60")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1178,7 +1190,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v59")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v60")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1237,7 +1249,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v59"
+                key="editor_finance_v60"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
