@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมปรับโครงสร้างฐานข้อมูลเป้าหมายเงินเก็บ (Goals Priority)
+# 🚀 ระบบ Smart Cache พร้อมระบบ Clean-up ตัดเป๋าตัง และล็อกเวลา Cycle อัตโนมัติ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,6 +120,7 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
+    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (July จบ 31 ก.ค. และ August เริ่ม 1 ส.ค.)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
@@ -145,7 +146,6 @@ def get_google_sheets():
         sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="8")
         sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
 
-    # 🔥 ตรวจสอบและอัปเกรดฐานข้อมูล Goals ให้มีคอลัมน์ "ความสำคัญ"
     try:
         sheet_goal = sh.worksheet("Goals")
         headers_goal = sheet_goal.row_values(1)
@@ -164,7 +164,6 @@ def get_google_sheets():
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
-        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -283,7 +282,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 📌 โหลดข้อมูล Wallets
+# 🔥 โหลด Wallets (ให้ User เพิ่มกระเป๋าได้อิสระ ไม่แบนชื่อ)
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
@@ -291,7 +290,7 @@ wallet_list = [
     if pd.notnull(w) and str(w).strip() != ""
 ]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
 
 # 🔥 โหลดข้อมูลเป้าหมายออมเงิน (Goals) และเพิ่ม Priority
 goals_data = fetch_goals()
@@ -542,7 +541,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard 
+    # 📊 Tab 2: Dashboard
     # ==========================================
     with tab2:
         if not df.empty:
@@ -992,7 +991,7 @@ else:
                 st.info("ไม่มีข้อมูลรายจ่ายบันทึกไว้ในรอบเดือนนี้ครับ")
 
     # ==========================================
-    # 🤝 Tab 3: ลูกหนี้ & หารบิล
+    # 🤝 Tab 3: ลูกหนี้ & หารบิล (เพิ่มระบบแก้ไข/ลบคนติดเงินได้ 100%)
     # ==========================================
     with tab3:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🤝 ระบบหารค่าใช้จ่าย & คนติดเงิน (Receivables Tracker)</p>", unsafe_allow_html=True)
@@ -1061,8 +1060,21 @@ else:
         
         st.markdown("---")
         st.markdown("<p class='quick-add-text'>📋 ตารางประวัติหารค่าใช้จ่ายและคนติดเงินทั้งหมด</p>", unsafe_allow_html=True)
+        st.caption("💡 สามารถคลิกแก้ไขข้อมูล หรือ **เลือกแถวแล้วกดปุ่ม Delete บนคีย์บอร์ด** เพื่อลบรายการที่บันทึกผิดออกได้ทันทีครับ")
+        
         if not df_debt.empty:
-            st.dataframe(df_debt, use_container_width=True, hide_index=True)
+            edited_debt = st.data_editor(
+                df_debt, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                key="editor_debt_v62"
+            )
+            if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
+                debt_sheet.clear()
+                debt_sheet.update(range_name="A1", values=[edited_debt.columns.values.tolist()] + edited_debt.values.tolist())
+                fetch_receivables.clear()
+                st.success("อัปเดตข้อมูลคนติดเงินเรียบร้อย! ✨")
+                st.rerun()
         else:
             st.info("ยังไม่มีประวัติคนติดเงินในระบบครับ")
 
@@ -1146,7 +1158,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v61"
+                key="editor_goals_v62"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1169,7 +1181,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v61"
+                key="editor_wallets_v62"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1191,7 +1203,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v61")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v62")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1201,7 +1213,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v61")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v62")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1260,7 +1272,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v61"
+                key="editor_finance_v62"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
