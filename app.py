@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบ Clean-up ตัดเป๋าตัง และล็อกเวลา Cycle อัตโนมัติ
+# 🚀 ระบบ Smart Cache พร้อมปรับโครงสร้างฐานข้อมูลเป้าหมายเงินเก็บ (Goals Priority)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,7 +120,6 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
-    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (July จบ 31 ก.ค. และ August เริ่ม 1 ส.ค.)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
@@ -146,32 +145,26 @@ def get_google_sheets():
         sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="8")
         sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
 
+    # 🔥 ตรวจสอบและอัปเกรดฐานข้อมูล Goals ให้มีคอลัมน์ "ความสำคัญ"
     try:
         sheet_goal = sh.worksheet("Goals")
+        headers_goal = sheet_goal.row_values(1)
+        if len(headers_goal) < 5 or headers_goal[4] != "ความสำคัญ":
+            sheet_goal.update_cell(1, 5, "ความสำคัญ")
     except:
         sheet_goal = sh.add_worksheet(title="Goals", rows="30", cols="5")
-        sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
-        sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0])
+        sheet_goal.append_row(["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)", "ความสำคัญ"])
+        sheet_goal.append_row(["✈️", "GRE / Future Studies Fund", 100000.0, 0.0, "🔥 สูง (High)"])
 
-    # 🔥 ล้างรายชื่อในชีต Wallets ตัด "เป๋าตัง (G-wallet)" ออกถาวรทุกรูปแบบ
     try:
         sheet_wallet = sh.worksheet("Wallets")
-        try:
-            records_w = sheet_wallet.get_all_values()
-            clean_w_rows = [["ชื่อกระเป๋า"]]
-            for r in records_w[1:]:
-                if len(r) > 0 and str(r[0]).strip() != "" and "เป๋า" not in str(r[0]) and "g-wallet" not in str(r[0]).lower():
-                    clean_w_rows.append([str(r[0]).strip()])
-            sheet_wallet.clear()
-            sheet_wallet.update(range_name="A1", values=clean_w_rows)
-        except Exception:
-            pass
     except:
         sheet_wallet = sh.add_worksheet(title="Wallets", rows="30", cols="3")
         sheet_wallet.append_row(["ชื่อกระเป๋า"])
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
+        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -290,7 +283,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 🔥 โหลด Wallets (ให้ User เพิ่มกระเป๋าได้อิสระ ไม่แบนชื่อ)
+# 📌 โหลดข้อมูล Wallets
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
@@ -300,9 +293,14 @@ wallet_list = [
 if not wallet_list:
     wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
 
-# 📌 โหลดข้อมูลเป้าหมายออมเงิน (Goals)
+# 🔥 โหลดข้อมูลเป้าหมายออมเงิน (Goals) และเพิ่ม Priority
 goals_data = fetch_goals()
-df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)"])
+df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)", "ความสำคัญ"])
+if 'ความสำคัญ' not in df_goals.columns:
+    df_goals['ความสำคัญ'] = "⭐ ปานกลาง (Medium)"
+else:
+    df_goals['ความสำคัญ'] = df_goals['ความสำคัญ'].replace(r'^\s*$', "⭐ ปานกลาง (Medium)", regex=True)
+
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
 def calculate_savings_metrics(df_source):
@@ -544,7 +542,7 @@ else:
                     st.rerun()
 
     # ==========================================
-    # 📊 Tab 2: Dashboard
+    # 📊 Tab 2: Dashboard 
     # ==========================================
     with tab2:
         if not df.empty:
@@ -619,7 +617,6 @@ else:
                             df_cycle = df_cycle[df_cycle['วันเวลา'] >= start_dt]
                         break
 
-            # 🔥 1) กรองรายการเงินลงทุน (Investments)
             inv_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
                 df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
@@ -627,17 +624,14 @@ else:
             ) & ~df_cycle['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
             inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 2) กรองรายการเงินออม (Savings Flow)
             _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
-            # 💡 3) รายรับ (Income)
             inc_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
                 ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
             )
             inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
-            # 🔥 4) รายจ่าย (Expenses)
             exp_mask = (
                 df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
                 ~inv_mask &
@@ -1092,17 +1086,26 @@ else:
         st.markdown("---")
         
         if not df_goals.empty:
-            for idx, row in df_goals.iterrows():
-                g_icon = str(row["ไอคอน"]).strip()
-                g_name = str(row["ชื่อเป้าหมาย"]).strip()
+            df_display_goals = df_goals.copy()
+            priority_map = {"🔥 สูง (High)": 1, "⭐ ปานกลาง (Medium)": 2, "🟢 ต่ำ (Low)": 3}
+            df_display_goals['pri_score'] = df_display_goals['ความสำคัญ'].map(priority_map).fillna(2)
+            df_display_goals = df_display_goals.sort_values(by=['pri_score', 'ชื่อเป้าหมาย'])
+
+            for idx, row in df_display_goals.iterrows():
+                g_icon = str(row.get("ไอคอน", "")).strip()
+                g_name = str(row.get("ชื่อเป้าหมาย", "")).strip()
                 title_text = f"{g_icon} {g_name}".strip()
-                g_target = float(row["เป้าหมาย (บาท)"]) if pd.notnull(row["เป้าหมาย (บาท)"]) and float(row["เป้าหมาย (บาท)"]) > 0 else 1.0
-                g_saved = float(row["สะสมแล้ว (บาท)"]) if pd.notnull(row["สะสมแล้ว (บาท)"]) else 0.0
+                g_target = float(row.get("เป้าหมาย (บาท)", 1.0)) if pd.notnull(row.get("เป้าหมาย (บาท)", 1.0)) and float(row.get("เป้าหมาย (บาท)", 1.0)) > 0 else 1.0
+                g_saved = float(row.get("สะสมแล้ว (บาท)", 0.0)) if pd.notnull(row.get("สะสมแล้ว (บาท)", 0.0)) else 0.0
+                g_pri = str(row.get("ความสำคัญ", "⭐ ปานกลาง (Medium)")).strip()
+                if not g_pri or g_pri == "nan": g_pri = "⭐ ปานกลาง (Medium)"
                 
                 pct = min(g_saved / g_target, 1.0)
                 pct_display = (g_saved / g_target) * 100
                 
-                st.markdown(f"**{title_text}** — `฿{g_saved:,.2f} / ฿{g_target:,.2f} ({pct_display:.1f}%)`")
+                pri_color = "#f9744b" if "สูง" in g_pri else ("#e9c46a" if "ปานกลาง" in g_pri else "#2a9d8f")
+                
+                st.markdown(f"**{title_text}** <span style='font-size:12px; background-color:{pri_color}20; color:{pri_color}; padding:3px 10px; border-radius:12px; margin-left:10px; font-weight:600;'>{g_pri}</span><br><span style='font-size:14px;'>`฿{g_saved:,.2f} / ฿{g_target:,.2f} ({pct_display:.1f}%)`</span>", unsafe_allow_html=True)
                 st.progress(pct)
                 st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
         else:
@@ -1117,10 +1120,11 @@ else:
                     new_g_name = st.text_input("ชื่อเป้าหมาย (เช่น ✈️ GRE Fund, 💻 ซื้อ iPad)", placeholder="พิมพ์ชื่อเป้าหมายพร้อมไอคอนได้เลย...")
                     new_g_target = st.number_input("จำนวนเงินเป้าหมาย (บาท)", min_value=100.0, step=1000.0, format="%.2f", value=None, placeholder="0.00")
                     new_g_saved = st.number_input("เงินออมเริ่มต้นในกระเป๋านี้ (บาท)", min_value=0.0, step=500.0, format="%.2f", value=0.0)
+                    new_g_pri = st.selectbox("ระดับความสำคัญ (Priority)", ["🔥 สูง (High)", "⭐ ปานกลาง (Medium)", "🟢 ต่ำ (Low)"], index=1)
                     
                     if st.form_submit_button("💾 เพิ่มเป้าหมายลงระบบ", use_container_width=True):
                         if new_g_name.strip() and new_g_target is not None and new_g_target > 0:
-                            goal_sheet.append_row(["", new_g_name.strip(), float(new_g_target), float(new_g_saved)])
+                            goal_sheet.append_row(["", new_g_name.strip(), float(new_g_target), float(new_g_saved), new_g_pri])
                             fetch_goals.clear()
                             st.success(f"เพิ่มเป้าหมาย '{new_g_name}' สำเร็จ! ✨")
                             st.rerun()
@@ -1135,7 +1139,14 @@ else:
                 df_goals, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_goals_v60"
+                column_config={
+                    "ความสำคัญ": st.column_config.SelectboxColumn(
+                        "ความสำคัญ",
+                        options=["🔥 สูง (High)", "⭐ ปานกลาง (Medium)", "🟢 ต่ำ (Low)"],
+                        required=True
+                    )
+                },
+                key="editor_goals_v61"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1158,7 +1169,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v60"
+                key="editor_wallets_v61"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1180,7 +1191,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v60")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v61")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1190,7 +1201,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v60")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v61")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1249,7 +1260,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v60"
+                key="editor_finance_v61"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
