@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบ Clean-up ตัดเป๋าตัง และล็อกเวลา Cycle อัตโนมัติ
+# 🚀 ระบบ Smart Cache พร้อมปรับโครงสร้างฐานข้อมูลเป้าหมายเงินเก็บ (Goals Priority)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,7 +120,6 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
-    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (July จบ 31 ก.ค. และ August เริ่ม 1 ส.ค.)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
@@ -146,6 +145,7 @@ def get_google_sheets():
         sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="8")
         sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
 
+    # 🔥 ตรวจสอบและอัปเกรดฐานข้อมูล Goals ให้มีคอลัมน์ "ความสำคัญ"
     try:
         sheet_goal = sh.worksheet("Goals")
         headers_goal = sheet_goal.row_values(1)
@@ -164,6 +164,7 @@ def get_google_sheets():
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
+        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
@@ -282,7 +283,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
-# 🔥 โหลด Wallets (ให้ User เพิ่มกระเป๋าได้อิสระ ไม่แบนชื่อ)
+# 📌 โหลดข้อมูล Wallets
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
@@ -290,15 +291,24 @@ wallet_list = [
     if pd.notnull(w) and str(w).strip() != ""
 ]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
 
-# 🔥 โหลดข้อมูลเป้าหมายออมเงิน (Goals) และเพิ่ม Priority
+# 🔥 โหลดข้อมูลเป้าหมายออมเงิน (Goals) และเพิ่ม Priority แบบ 5 ระดับ
 goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)", "ความสำคัญ"])
 if 'ความสำคัญ' not in df_goals.columns:
     df_goals['ความสำคัญ'] = "⭐ ปานกลาง (Medium)"
 else:
     df_goals['ความสำคัญ'] = df_goals['ความสำคัญ'].replace(r'^\s*$', "⭐ ปานกลาง (Medium)", regex=True)
+
+# 🚀 ตัวแปร Priority 5 ระดับ
+PRIORITY_LEVELS = [
+    "🚀 ด่วนที่สุด (Critical)", 
+    "🔥 สูง (High)", 
+    "⭐ ปานกลาง (Medium)", 
+    "🟢 ต่ำ (Low)", 
+    "🧊 เผื่อไว้ (Optional)"
+]
 
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
@@ -855,7 +865,6 @@ else:
                 df_bar_metric = df_bar_raw[df_bar_raw['ประเภท_clean'].isin(target_types)].copy()
                 
                 if not df_bar_metric.empty:
-                    # 🔥 ตัวกรอง (Filter) ให้ผู้ใช้เลือกดูเฉพาะหมวดหมู่ที่ต้องการ
                     available_cats_bar = sorted([str(c) for c in df_bar_metric['หมวดหมู่หลัก'].unique() if pd.notnull(c) and str(c).strip() != ""])
                     selected_bar_cats = st.multiselect(f"🔎 กรองดูเฉพาะหมวดหมู่หลัก (เว้นว่างเพื่อดูทั้งหมด):", available_cats_bar, default=[], key="bar_cat_select")
                     
@@ -863,7 +872,6 @@ else:
                         df_bar_metric = df_bar_metric[df_bar_metric['หมวดหมู่หลัก'].isin(selected_bar_cats)]
                         
                     if not df_bar_metric.empty:
-                        # 🔥 วิเคราะห์ผลรวมและค่าเฉลี่ย
                         total_amt = df_bar_metric['จำนวนเงิน'].sum()
                         unique_periods = df_bar_metric['sort_key'].nunique()
                         avg_amt = total_amt / unique_periods if unique_periods > 0 else 0
@@ -885,7 +893,6 @@ else:
                             )
                             fig_bar.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
                         else:
-                            # Stacked Bar: โชว์รายละเอียด Note เมื่อเอาเมาส์ชี้ และมีตัวเลขติดบนแท่ง
                             stacked_data = df_bar_metric.groupby(['sort_key', 'ช่วงเวลา_str', 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
                             stacked_data = stacked_data.sort_values(by=['sort_key', 'จำนวนเงิน'], ascending=[True, False])
                             
@@ -900,7 +907,6 @@ else:
                             )
                             fig_bar.update_traces(texttemplate='฿%{text:,.0f}', textposition='inside', insidetextanchor='middle')
 
-                            # 🔥 สร้างตัวเลข "ยอดรวมสุทธิ" แปะไว้บนยอดสูงสุดของแต่ละแท่ง
                             total_by_period = stacked_data.groupby(['sort_key', 'ช่วงเวลา_str'], as_index=False)['จำนวนเงิน'].sum()
                             for _, r in total_by_period.iterrows():
                                 fig_bar.add_annotation(
@@ -909,7 +915,7 @@ else:
                                     text=f"<b>฿{r['จำนวนเงิน']:,.0f}</b>",
                                     showarrow=False,
                                     yshift=14,
-                                    font=dict(size=14)
+                                    font=dict(size=14, color='white')
                                 )
 
                         fig_bar.update_layout(
@@ -922,7 +928,6 @@ else:
                         )
                         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
 
-                        # 🔥 ตารางเจาะลึกบิลรายจ่าย
                         if "เปรียบเทียบทุกประเภท" not in bar_metric_mode:
                             with st.expander(f"📋 ตารางรายละเอียดแจกแจงรายการ ({bar_metric_mode.split(' ')[1]})", expanded=False):
                                 st.caption("💡 ดูรายละเอียดและข้อความบันทึกย่อย (Note) ว่าใช้จ่าย/รับเงิน จากอะไรบ้างในแต่ละบิลครับ")
@@ -991,7 +996,7 @@ else:
                 st.info("ไม่มีข้อมูลรายจ่ายบันทึกไว้ในรอบเดือนนี้ครับ")
 
     # ==========================================
-    # 🤝 Tab 3: ลูกหนี้ & หารบิล (เพิ่มระบบแก้ไข/ลบคนติดเงินได้ 100%)
+    # 🤝 Tab 3: ลูกหนี้ & หารบิล
     # ==========================================
     with tab3:
         st.markdown("<p class='quick-add-text' style='font-size: 22px;'>🤝 ระบบหารค่าใช้จ่าย & คนติดเงิน (Receivables Tracker)</p>", unsafe_allow_html=True)
@@ -1067,7 +1072,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v62"
+                key="editor_debt_v63"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1099,8 +1104,14 @@ else:
         
         if not df_goals.empty:
             df_display_goals = df_goals.copy()
-            priority_map = {"🔥 สูง (High)": 1, "⭐ ปานกลาง (Medium)": 2, "🟢 ต่ำ (Low)": 3}
-            df_display_goals['pri_score'] = df_display_goals['ความสำคัญ'].map(priority_map).fillna(2)
+            priority_map = {
+                "🚀 ด่วนที่สุด (Critical)": 1,
+                "🔥 สูง (High)": 2, 
+                "⭐ ปานกลาง (Medium)": 3, 
+                "🟢 ต่ำ (Low)": 4,
+                "🧊 เผื่อไว้ (Optional)": 5
+            }
+            df_display_goals['pri_score'] = df_display_goals['ความสำคัญ'].map(priority_map).fillna(3)
             df_display_goals = df_display_goals.sort_values(by=['pri_score', 'ชื่อเป้าหมาย'])
 
             for idx, row in df_display_goals.iterrows():
@@ -1115,7 +1126,11 @@ else:
                 pct = min(g_saved / g_target, 1.0)
                 pct_display = (g_saved / g_target) * 100
                 
-                pri_color = "#f9744b" if "สูง" in g_pri else ("#e9c46a" if "ปานกลาง" in g_pri else "#2a9d8f")
+                if "ด่วนที่สุด" in g_pri: pri_color = "#d62828"
+                elif "สูง" in g_pri: pri_color = "#f9744b"
+                elif "ปานกลาง" in g_pri: pri_color = "#e9c46a"
+                elif "ต่ำ" in g_pri: pri_color = "#2a9d8f"
+                else: pri_color = "#457b9d"
                 
                 st.markdown(f"**{title_text}** <span style='font-size:12px; background-color:{pri_color}20; color:{pri_color}; padding:3px 10px; border-radius:12px; margin-left:10px; font-weight:600;'>{g_pri}</span><br><span style='font-size:14px;'>`฿{g_saved:,.2f} / ฿{g_target:,.2f} ({pct_display:.1f}%)`</span>", unsafe_allow_html=True)
                 st.progress(pct)
@@ -1132,7 +1147,7 @@ else:
                     new_g_name = st.text_input("ชื่อเป้าหมาย (เช่น ✈️ GRE Fund, 💻 ซื้อ iPad)", placeholder="พิมพ์ชื่อเป้าหมายพร้อมไอคอนได้เลย...")
                     new_g_target = st.number_input("จำนวนเงินเป้าหมาย (บาท)", min_value=100.0, step=1000.0, format="%.2f", value=None, placeholder="0.00")
                     new_g_saved = st.number_input("เงินออมเริ่มต้นในกระเป๋านี้ (บาท)", min_value=0.0, step=500.0, format="%.2f", value=0.0)
-                    new_g_pri = st.selectbox("ระดับความสำคัญ (Priority)", ["🔥 สูง (High)", "⭐ ปานกลาง (Medium)", "🟢 ต่ำ (Low)"], index=1)
+                    new_g_pri = st.selectbox("ระดับความสำคัญ (Priority)", PRIORITY_LEVELS, index=2)
                     
                     if st.form_submit_button("💾 เพิ่มเป้าหมายลงระบบ", use_container_width=True):
                         if new_g_name.strip() and new_g_target is not None and new_g_target > 0:
@@ -1154,11 +1169,11 @@ else:
                 column_config={
                     "ความสำคัญ": st.column_config.SelectboxColumn(
                         "ความสำคัญ",
-                        options=["🔥 สูง (High)", "⭐ ปานกลาง (Medium)", "🟢 ต่ำ (Low)"],
+                        options=PRIORITY_LEVELS,
                         required=True
                     )
                 },
-                key="editor_goals_v62"
+                key="editor_goals_v63"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1181,7 +1196,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v62"
+                key="editor_wallets_v63"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1203,7 +1218,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v62")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v63")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1213,7 +1228,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v62")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v63")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1272,7 +1287,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v62"
+                key="editor_finance_v63"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
