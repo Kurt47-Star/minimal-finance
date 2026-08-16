@@ -87,13 +87,19 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache
+# 🚀 ระบบ Smart Cache (แก้ปัญหาแอปจำค่า Error ไว้ 1 ชั่วโมง)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
         sh = client.open(spreadsheet_name)
-    except Exception:
-        return None, None, None, None, None, None, None, None
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอ (ไฟล์อาจถูกลบหรือเปลี่ยนชื่อ)")
+        st.stop()
+    except Exception as e:
+        # 🔥 ถ้าเกิด Error จากเน็ตสะดุด จะหยุดแอปทันที เพื่อไม่ให้จำค่าความล้มเหลวลง Cache!
+        st.error(f"⚠️ การเชื่อมต่อ Google API ขัดข้องชั่วคราว ({e})")
+        st.info("💡 วิธีแก้ด่วน: กดเมนู 3 จุด มุมขวาบนของแอป (⋮) -> เลือก 'Clear cache' แล้วแอปจะกลับมาปกติครับ!")
+        st.stop()
         
     sheet_main = sh.sheet1
     try:
@@ -168,10 +174,6 @@ def get_google_sheets():
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
 sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet, debt_sheet, goal_sheet, wallet_sheet = get_google_sheets()
-
-if sheet is None:
-    st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
-    st.stop()
 
 # --- ฟังก์ชันโหลดข้อมูลแยก Cache ---
 @st.cache_data(ttl=60)
@@ -382,7 +384,6 @@ if app_mode == "📱 Mobile Mode":
         if "เงินออม" in type_entry:
             sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True)
             
-            # 🔥 ระบบเลือก Mode ว่าจะใช้อันเดียว หรือ แบ่งสัดส่วน %
             mb_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🔀 แบ่งเปอร์เซ็นต์ (Split %)"], horizontal=True, key="mb_alloc_mode")
             
             if mb_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
@@ -423,7 +424,6 @@ if app_mode == "📱 Mobile Mode":
     with st.form("mobile_form", clear_on_submit=True):
         amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
         
-        # 🔥 รับค่าเปอร์เซ็นต์ (ถ้าเป็นโหมด Split)
         alloc_pcts_mb = {}
         if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
             if len(selected_goals_split_mb) > 0:
@@ -439,7 +439,6 @@ if app_mode == "📱 Mobile Mode":
         note = st.text_input("Note", placeholder="Optional...")
         
         if st.form_submit_button("Save Transaction", use_container_width=True) and amount is not None and amount > 0:
-            # 🛡️ Validate 100% ก่อนเซฟ
             if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
                 if len(selected_goals_split_mb) == 0:
                     st.error("❌ กรุณาเลือกเป้าหมายที่จะแบ่งเงินครับ")
@@ -475,7 +474,7 @@ if app_mode == "📱 Mobile Mode":
                                 break
                     sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
                     
-                else: # โหมด Split %
+                else: 
                     for g, pct in alloc_pcts_mb.items():
                         if pct > 0:
                             split_amt = float(amount) * (pct / 100.0)
@@ -495,7 +494,7 @@ if app_mode == "📱 Mobile Mode":
                                         fetch_goals.clear()
                                         break
                             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, split_amt, split_note, wallet_entry])
-            else: # Not Savings
+            else:
                 full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
                 sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
             
@@ -547,7 +546,6 @@ else:
             elif "เงินออม" in type_entry:
                 sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้", "🎯 กู้เงินคลัง (ต้องคืน)", "🔄 โอนคืนเงินกู้"], horizontal=True, key="dt_sav_action")
                 
-                # 🔥 โหมดจัดสรรเป้าหมาย Desktop
                 dt_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🔀 แบ่งเปอร์เซ็นต์ (Split %)"], horizontal=True, key="dt_alloc_mode")
                 
                 if dt_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
@@ -591,7 +589,6 @@ else:
             with st.form("desktop_form", clear_on_submit=True):
                 amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00")
                 
-                # 🔥 รับเปอร์เซ็นต์ใน Form
                 alloc_pcts_dt = {}
                 if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
                     if len(selected_goals_split_dt) > 0:
@@ -607,7 +604,6 @@ else:
                 note = st.text_input("Note", placeholder="...")
                 
                 if st.form_submit_button("Save Transaction", use_container_width=True) and amount is not None and amount > 0:
-                    # 🛡️ Validate 100%
                     if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
                         if len(selected_goals_split_dt) == 0:
                             st.error("❌ กรุณาเลือกเป้าหมายที่จะแบ่งเงินครับ")
@@ -643,7 +639,7 @@ else:
                                         break
                             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
                             
-                        else: # โหมด Split %
+                        else: 
                             for g, pct in alloc_pcts_dt.items():
                                 if pct > 0:
                                     split_amt = float(amount) * (pct / 100.0)
@@ -663,7 +659,7 @@ else:
                                                 fetch_goals.clear()
                                                 break
                                     sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, split_amt, split_note, wallet_entry])
-                    else: # Not Savings
+                    else:
                         full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
                         sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
                     
@@ -1192,7 +1188,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v64"
+                key="editor_debt_v65"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1293,7 +1289,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v64"
+                key="editor_goals_v65"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1316,7 +1312,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v64"
+                key="editor_wallets_v65"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1338,7 +1334,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v64")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v65")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1348,7 +1344,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v64")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v65")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1407,7 +1403,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v64"
+                key="editor_finance_v65"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
