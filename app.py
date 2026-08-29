@@ -87,19 +87,13 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache (แก้ปัญหาแอปจำค่า Error ไว้ 1 ชั่วโมง)
+# 🚀 ระบบ Smart Cache พร้อมปรับโครงสร้างฐานข้อมูลเป้าหมายเงินเก็บ (Goals Priority)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
         sh = client.open(spreadsheet_name)
-    except gspread.exceptions.SpreadsheetNotFound:
-        st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอ (ไฟล์อาจถูกลบหรือเปลี่ยนชื่อ)")
-        st.stop()
-    except Exception as e:
-        # 🔥 ถ้าเกิด Error จากเน็ตสะดุด จะหยุดแอปทันที เพื่อไม่ให้จำค่าความล้มเหลวลง Cache!
-        st.error(f"⚠️ การเชื่อมต่อ Google API ขัดข้องชั่วคราว ({e})")
-        st.info("💡 วิธีแก้ด่วน: กดเมนู 3 จุด มุมขวาบนของแอป (⋮) -> เลือก 'Clear cache' แล้วแอปจะกลับมาปกติครับ!")
-        st.stop()
+    except Exception:
+        return None, None, None, None, None, None, None, None
         
     sheet_main = sh.sheet1
     try:
@@ -151,6 +145,7 @@ def get_google_sheets():
         sheet_debt = sh.add_worksheet(title="Receivables", rows="50", cols="8")
         sheet_debt.append_row(["ID", "ชื่อคนติดเงิน", "รายการ/รายละเอียด", "จำนวนเงิน", "กระเป๋าที่จ่าย", "วันที่สร้าง", "สถานะ", "วันที่คืน"])
 
+    # 🔥 ตรวจสอบและอัปเกรดฐานข้อมูล Goals ให้มีคอลัมน์ "ความสำคัญ"
     try:
         sheet_goal = sh.worksheet("Goals")
         headers_goal = sheet_goal.row_values(1)
@@ -174,6 +169,10 @@ def get_google_sheets():
     return sheet_main, sheet_qa, sheet_cat, sheet_loan, sheet_cycle, sheet_debt, sheet_goal, sheet_wallet
 
 sheet, qa_sheet, cat_sheet, loan_sheet, cycle_sheet, debt_sheet, goal_sheet, wallet_sheet = get_google_sheets()
+
+if sheet is None:
+    st.error(f"❌ หาไฟล์ Google Sheets ที่ชื่อ '{spreadsheet_name}' ไม่เจอครับ")
+    st.stop()
 
 # --- ฟังก์ชันโหลดข้อมูลแยก Cache ---
 @st.cache_data(ttl=60)
@@ -284,6 +283,7 @@ if loan_records:
 else:
     db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = 10000.0, 15.0, 12, 0, ""
 
+# 📌 โหลดข้อมูล Wallets
 wallets_data = fetch_wallets()
 df_wallets = pd.DataFrame(wallets_data) if wallets_data else pd.DataFrame(columns=["ชื่อกระเป๋า"])
 wallet_list = [
@@ -293,6 +293,7 @@ wallet_list = [
 if not wallet_list:
     wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
 
+# 🔥 โหลดข้อมูลเป้าหมายออมเงิน (Goals) และเพิ่ม Priority แบบ 5 ระดับ
 goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)", "ความสำคัญ"])
 if 'ความสำคัญ' not in df_goals.columns:
@@ -300,6 +301,7 @@ if 'ความสำคัญ' not in df_goals.columns:
 else:
     df_goals['ความสำคัญ'] = df_goals['ความสำคัญ'].replace(r'^\s*$', "⭐ ปานกลาง (Medium)", regex=True)
 
+# 🚀 ตัวแปร Priority 5 ระดับ
 PRIORITY_LEVELS = [
     "🚀 ด่วนที่สุด (Critical)", 
     "🔥 สูง (High)", 
@@ -916,7 +918,7 @@ else:
             st.markdown("---")
 
             # ==========================================
-            # 🔥 📊 Periodic Bar Analysis (วิเคราะห์กราฟแท่งและค่าเฉลี่ยแบบลึก + แสดงยอดรวมบนแท่ง)
+            # 🔥 📊 Periodic Bar Analysis
             # ==========================================
             def clean_type_name(t_str):
                 t = str(t_str).strip()
@@ -1108,6 +1110,37 @@ else:
                         )
                         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
                 
+                # ==========================================
+                # 🔥 🪐 Deep Dive Infographic (เจาะลึกรายจ่ายด้วย Treemap)
+                # ==========================================
+                st.markdown("---")
+                st.markdown("<p class='quick-add-text'>🪐 Deep Dive Infographic (เจาะลึกรายจ่ายถึงระดับบิล)</p>", unsafe_allow_html=True)
+                st.caption("💡 แผนภาพโครงสร้างต้นไม้ (Treemap) แสดงสัดส่วนรายจ่ายตั้งแต่ หมวดหมู่หลัก ➜ หมวดหมู่ย่อย ➜ รายละเอียดบิล (Note) ที่ซื้อไป")
+                
+                tm_df = filtered_expense_df[filtered_expense_df['จำนวนเงิน'] > 0].copy()
+                if not tm_df.empty:
+                    # ป้องกันช่องว่างทำให้กราฟบั๊ก
+                    tm_df['รายละเอียด'] = tm_df['รายละเอียด'].replace(r'^\s*$', 'ไม่ระบุ Note', regex=True)
+                    tm_grouped = tm_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
+                    
+                    fig_tree = px.treemap(
+                        tm_grouped,
+                        path=[px.Constant("💸 รวมรายจ่าย (ที่เลือก)"), 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'],
+                        values='จำนวนเงิน',
+                        color='หมวดหมู่หลัก',
+                        color_discrete_map=cat_color_map
+                    )
+                    fig_tree.update_traces(
+                        textinfo="label+value+percent parent",
+                        texttemplate="<b>%{label}</b><br>฿%{value:,.0f}<br>(%{percentParent:.1%})",
+                        hovertemplate="<b>%{label}</b><br>ยอดรวม: ฿%{value:,.2f}<br>สัดส่วนในหมวดนี้: %{percentParent:.2%}<extra></extra>"
+                    )
+                    fig_tree.update_layout(
+                        margin=dict(t=30, l=0, r=0, b=0),
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
+                    )
+                    st.plotly_chart(fig_tree, use_container_width=True, theme="streamlit")
+
             else:
                 st.info("ไม่มีข้อมูลรายจ่ายบันทึกไว้ในรอบเดือนนี้ครับ")
 
@@ -1188,7 +1221,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v65"
+                key="editor_debt_v66"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1289,7 +1322,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v65"
+                key="editor_goals_v66"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1312,7 +1345,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v65"
+                key="editor_wallets_v66"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1334,7 +1367,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v65")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v66")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1344,7 +1377,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v65")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v66")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1403,7 +1436,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v65"
+                key="editor_finance_v66"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
