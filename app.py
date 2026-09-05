@@ -775,8 +775,6 @@ else:
                 ~df_cycle['ประเภท'].astype(str).str.contains('ปรับยอด', case=False, na=False)
             )
             exp = float(df_cycle[exp_mask]['จำนวนเงิน'].sum())
-            
-            # 🔥 กำหนด expense_df ตรงนี้ให้ครอบคลุมการใช้งานทั้งหมด
             expense_df = df_cycle[exp_mask].copy()
 
             def is_transfer_row(row_type):
@@ -922,16 +920,36 @@ else:
                 st.caption("💡 ติดตามว่าคุณใช้เงินไปเท่าไหร่แล้วในแต่ละหมวดหมู่ (ตั้งงบได้ทั้งหมวดหลักและย่อย) และเหลือโควต้าอีกกี่บาท")
                 
                 with st.expander("⚙️ ตั้งค่างบประมาณ (Set Budgets)", expanded=False):
-                    st.info("พิมพ์ชื่อหมวดหมู่ที่ต้องการคุมงบ (พิมพ์ให้ตรงกับชื่อหมวดหมู่ที่ใช้จด เช่น `อาหาร/เครื่องดื่ม` หรือเจาะจงเป็น `ของใช้ส่วนตัว: ยาสีฟัน`)")
+                    st.info("คลิกที่ช่อง 'หมวดหมู่เป้าหมาย' เพื่อเลือกหมวดหมู่หลัก หรือ หมวดหมู่ย่อย ที่ต้องการคุมงบประมาณได้เลยครับ 👇")
                     
+                    # 🔥 สร้างตัวเลือกหมวดหมู่จากฐานข้อมูล Categories แบบอัตโนมัติ
+                    budget_options = []
+                    if "💸 รายจ่าย" in SUB_CATEGORIES:
+                        for main_cat, sub_cats in SUB_CATEGORIES["💸 รายจ่าย"].items():
+                            budget_options.append(main_cat) # ใส่หมวดหลัก
+                            for sub_cat in sub_cats:
+                                if sub_cat != "ทั่วไป" and sub_cat.strip() != "":
+                                    budget_options.append(f"{main_cat}: {sub_cat}") # ใส่หมวดย่อย
+                    budget_options = sorted(list(set(budget_options)))
+                    
+                    # กันเหนียวกรณีเพิ่งเริ่มใช้และยังไม่มีหมวดหมู่
+                    if not budget_options:
+                        budget_options = ["อาหาร/เครื่องดื่ม", "ค่าเดินทาง", "ของใช้ส่วนตัว"]
+
                     edited_budgets = st.data_editor(
                         df_budgets,
                         use_container_width=True,
                         num_rows="dynamic",
                         column_config={
+                            "หมวดหมู่เป้าหมาย": st.column_config.SelectboxColumn(
+                                "หมวดหมู่เป้าหมาย (เลือก)",
+                                help="เลือกหมวดหมู่ที่ต้องการจำกัดงบ",
+                                options=budget_options,
+                                required=True
+                            ),
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v3"
+                        key="budget_editor_v5"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -940,6 +958,7 @@ else:
                         st.success("อัปเดตงบประมาณเรียบร้อย!")
                         st.rerun()
 
+                # คำนวณยอดใช้จ่ายรวมจาก df_cycle
                 exp_summary = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
                 exp_sub_summary = expense_df.groupby('หมวดหมู่', as_index=False)['จำนวนเงิน'].sum()
                 
@@ -967,6 +986,7 @@ else:
                             rem_amt = budget_amt - spent_amt
                             pct = (spent_amt / budget_amt) * 100 if budget_amt > 0 else 100
                             
+                            # 🌈 กำหนดสีตามระดับการใช้เงิน (Burn Rate)
                             if pct < 60: 
                                 color, emo, msg = "#2a9d8f", "🟢", "ดีมาก! คุณยังเหลือโควต้าอีกเยอะ ใช้จ่ายได้สบายๆ"
                             elif pct < 85: 
@@ -1322,7 +1342,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v70"
+                key="editor_debt_v71"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1423,7 +1443,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v70"
+                key="editor_goals_v71"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1446,7 +1466,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v70"
+                key="editor_wallets_v71"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1468,7 +1488,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v70")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v71")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1478,7 +1498,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v70")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v71")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1537,7 +1557,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v70"
+                key="editor_finance_v71"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
