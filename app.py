@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบสร้างชีต Budgets
+# 🚀 ระบบ Smart Cache 
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -908,6 +908,64 @@ else:
             st.markdown("---")
             
             # ==========================================
+            # 🔥 🏆 สรุปการจัดสรรเงิน (ออม & ลงทุน) ในแต่ละรอบบัญชี
+            # ==========================================
+            st.markdown("<p class='quick-add-text'>🏆 สรุปการจัดสรรเงิน (ออม & ลงทุน) ในแต่ละรอบบัญชี</p>", unsafe_allow_html=True)
+            cycle_summary_data = []
+            
+            for label, start_str, end_str, _, _, _ in cycle_options:
+                c_start_dt = parse_clean_datetime(pd.Series([start_str])).iloc[0]
+                if end_str and pd.notnull(end_str) and str(end_str).strip() != "":
+                    c_end_dt = parse_clean_datetime(pd.Series([end_str])).iloc[0]
+                    df_c = df_chart[(df_chart['วันเวลา'] >= c_start_dt) & (df_chart['วันเวลา'] <= c_end_dt)]
+                else:
+                    df_c = df_chart[df_chart['วันเวลา'] >= c_start_dt]
+                    
+                c_inv_mask = (
+                    df_c['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
+                    df_c['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
+                    df_c['รายละเอียด'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False)
+                ) & ~df_c['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
+                c_inv = float(df_c[c_inv_mask]['จำนวนเงิน'].sum())
+                
+                _, _, _, _, c_sav, _ = calculate_savings_metrics(df_c)
+                
+                clean_label = label.replace("🟢 ", "").replace("📅 ", "").split(" (")[0]
+                
+                cycle_summary_data.append({
+                    "รอบบัญชี (Cycle)": clean_label,
+                    "🐷 เงินออม (Savings)": c_sav,
+                    "📈 เงินลงทุน (Investments)": c_inv
+                })
+                
+            if cycle_summary_data:
+                df_cycle_sum = pd.DataFrame(cycle_summary_data[::-1])
+                
+                c_cy_chart, c_cy_table = st.columns([1.8, 1])
+                with c_cy_chart:
+                    df_melt = df_cycle_sum.melt(id_vars="รอบบัญชี (Cycle)", var_name="ประเภท", value_name="จำนวนเงิน")
+                    fig_cy = px.bar(df_melt, x="รอบบัญชี (Cycle)", y="จำนวนเงิน", color="ประเภท", barmode="group",
+                                    color_discrete_map={"🐷 เงินออม (Savings)": "#457b9d", "📈 เงินลงทุน (Investments)": "#e9c46a"}, text="จำนวนเงิน")
+                    fig_cy.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
+                    fig_cy.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(showgrid=False, title=""),
+                        yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
+                        margin=dict(t=30, b=0, l=0, r=0), uniformtext_minsize=9, uniformtext_mode='hide'
+                    )
+                    st.plotly_chart(fig_cy, use_container_width=True, theme="streamlit")
+                
+                with c_cy_table:
+                    st.caption("📋 ตารางสรุปยอดแยกตามรอบบัญชี")
+                    df_cycle_show = df_cycle_sum.copy().sort_index(ascending=False)
+                    df_cycle_show["🐷 เงินออม (Savings)"] = df_cycle_show["🐷 เงินออม (Savings)"].apply(lambda x: f"฿ {x:,.2f}")
+                    df_cycle_show["📈 เงินลงทุน (Investments)"] = df_cycle_show["📈 เงินลงทุน (Investments)"].apply(lambda x: f"฿ {x:,.2f}")
+                    st.dataframe(df_cycle_show, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            
+            # ==========================================
             # 🔥 🛡️ Smart Budget Tracker (ระบบควบคุมงบประมาณรายจ่าย)
             # ==========================================
             col_b_title, col_b_toggle = st.columns([2.5, 1])
@@ -922,17 +980,15 @@ else:
                 with st.expander("⚙️ ตั้งค่างบประมาณ (Set Budgets)", expanded=False):
                     st.info("คลิกที่ช่อง 'หมวดหมู่เป้าหมาย' เพื่อเลือกหมวดหมู่หลัก หรือ หมวดหมู่ย่อย ที่ต้องการคุมงบประมาณได้เลยครับ 👇")
                     
-                    # 🔥 สร้างตัวเลือกหมวดหมู่จากฐานข้อมูล Categories แบบอัตโนมัติ
                     budget_options = []
                     if "💸 รายจ่าย" in SUB_CATEGORIES:
                         for main_cat, sub_cats in SUB_CATEGORIES["💸 รายจ่าย"].items():
-                            budget_options.append(main_cat) # ใส่หมวดหลัก
+                            budget_options.append(main_cat) 
                             for sub_cat in sub_cats:
                                 if sub_cat != "ทั่วไป" and sub_cat.strip() != "":
-                                    budget_options.append(f"{main_cat}: {sub_cat}") # ใส่หมวดย่อย
+                                    budget_options.append(f"{main_cat}: {sub_cat}")
                     budget_options = sorted(list(set(budget_options)))
                     
-                    # กันเหนียวกรณีเพิ่งเริ่มใช้และยังไม่มีหมวดหมู่
                     if not budget_options:
                         budget_options = ["อาหาร/เครื่องดื่ม", "ค่าเดินทาง", "ของใช้ส่วนตัว"]
 
@@ -949,7 +1005,7 @@ else:
                             ),
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v5"
+                        key="budget_editor_v6"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -958,7 +1014,6 @@ else:
                         st.success("อัปเดตงบประมาณเรียบร้อย!")
                         st.rerun()
 
-                # คำนวณยอดใช้จ่ายรวมจาก df_cycle
                 exp_summary = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
                 exp_sub_summary = expense_df.groupby('หมวดหมู่', as_index=False)['จำนวนเงิน'].sum()
                 
@@ -986,7 +1041,6 @@ else:
                             rem_amt = budget_amt - spent_amt
                             pct = (spent_amt / budget_amt) * 100 if budget_amt > 0 else 100
                             
-                            # 🌈 กำหนดสีตามระดับการใช้เงิน (Burn Rate)
                             if pct < 60: 
                                 color, emo, msg = "#2a9d8f", "🟢", "ดีมาก! คุณยังเหลือโควต้าอีกเยอะ ใช้จ่ายได้สบายๆ"
                             elif pct < 85: 
@@ -1043,7 +1097,7 @@ else:
             st.markdown("---")
 
             # ==========================================
-            # 🔥 📊 Periodic Bar Analysis
+            # 🔥 📊 Periodic Bar Analysis (วิเคราะห์กราฟแท่งและค่าเฉลี่ยแบบลึก + แสดงยอดรวมบนแท่ง)
             # ==========================================
             def clean_type_name(t_str):
                 t = str(t_str).strip()
@@ -1342,7 +1396,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v71"
+                key="editor_debt_v72"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1443,7 +1497,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v71"
+                key="editor_goals_v72"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1466,7 +1520,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v71"
+                key="editor_wallets_v72"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1488,7 +1542,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v71")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v72")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1498,7 +1552,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v71")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v72")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1557,7 +1611,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v71"
+                key="editor_finance_v72"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
