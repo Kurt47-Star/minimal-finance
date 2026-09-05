@@ -163,9 +163,7 @@ def get_google_sheets():
         sheet_wallet.append_row(["🏦 กรุงไทย"])
         sheet_wallet.append_row(["📱 TrueMoney Wallet"])
         sheet_wallet.append_row(["🌸 ออมสิน"])
-        sheet_wallet.append_row(["🇹 เป๋าตัง (G-wallet)"])
         
-    # 🔥 เพิ่มชีต Budgets ควบคุมงบประมาณ
     try:
         sheet_budget = sh.worksheet("Budgets")
     except:
@@ -283,7 +281,6 @@ qa_records = fetch_quick_adds()
 qa_df = pd.DataFrame(qa_records) if qa_records else pd.DataFrame(columns=["ชื่อปุ่ม", "ประเภท", "หมวดหมู่", "จำนวนเงิน"])
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# โหลดข้อมูลงบประมาณ (Budgets)
 budgets_data = fetch_budgets()
 df_budgets = pd.DataFrame(budgets_data) if budgets_data else pd.DataFrame(columns=["หมวดหมู่เป้าหมาย", "งบประมาณ (บาท)"])
 
@@ -305,7 +302,7 @@ wallet_list = [
     if pd.notnull(w) and str(w).strip() != ""
 ]
 if not wallet_list:
-    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน", "🇹 เป๋าตัง (G-wallet)"]
+    wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
 
 goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)", "ความสำคัญ"])
@@ -778,6 +775,9 @@ else:
                 ~df_cycle['ประเภท'].astype(str).str.contains('ปรับยอด', case=False, na=False)
             )
             exp = float(df_cycle[exp_mask]['จำนวนเงิน'].sum())
+            
+            # 🔥 กำหนด expense_df ตรงนี้ให้ครอบคลุมการใช้งานทั้งหมด
+            expense_df = df_cycle[exp_mask].copy()
 
             def is_transfer_row(row_type):
                 t = str(row_type).strip().lower()
@@ -931,7 +931,7 @@ else:
                         column_config={
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v2"
+                        key="budget_editor_v3"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -940,7 +940,6 @@ else:
                         st.success("อัปเดตงบประมาณเรียบร้อย!")
                         st.rerun()
 
-                # คำนวณยอดใช้จ่ายรวมจาก df_cycle
                 exp_summary = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
                 exp_sub_summary = expense_df.groupby('หมวดหมู่', as_index=False)['จำนวนเงิน'].sum()
                 
@@ -968,7 +967,6 @@ else:
                             rem_amt = budget_amt - spent_amt
                             pct = (spent_amt / budget_amt) * 100 if budget_amt > 0 else 100
                             
-                            # 🌈 กำหนดสีตามระดับการใช้เงิน (Burn Rate)
                             if pct < 60: 
                                 color, emo, msg = "#2a9d8f", "🟢", "ดีมาก! คุณยังเหลือโควต้าอีกเยอะ ใช้จ่ายได้สบายๆ"
                             elif pct < 85: 
@@ -1025,7 +1023,7 @@ else:
             st.markdown("---")
 
             # ==========================================
-            # 🔥 📊 Periodic Bar Analysis (วิเคราะห์กราฟแท่งและค่าเฉลี่ยแบบลึก + แสดงยอดรวมบนแท่ง)
+            # 🔥 📊 Periodic Bar Analysis
             # ==========================================
             def clean_type_name(t_str):
                 t = str(t_str).strip()
@@ -1167,8 +1165,7 @@ else:
 
             st.markdown("---")
             
-            # 🔥 Expense Analysis (วิเคราะห์สัดส่วนรายจ่ายแบบวงกลม)
-            expense_df = df_cycle[exp_mask].copy()
+            # 🔥 Expense Analysis
             col_exp_title, col_exp_filter = st.columns([2, 1.5])
             with col_exp_title:
                 st.markdown("<p class='quick-add-text'>Expense Analysis (วิเคราะห์สัดส่วนรายจ่ายองค์รวม)</p>", unsafe_allow_html=True)
@@ -1217,9 +1214,7 @@ else:
                         )
                         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
                 
-                # ==========================================
-                # 🔥 🪐 Deep Dive Infographic (เจาะลึกรายจ่ายด้วย Treemap)
-                # ==========================================
+                # 🔥 🪐 Deep Dive Infographic
                 st.markdown("---")
                 st.markdown("<p class='quick-add-text'>🪐 Deep Dive Infographic (เจาะลึกรายจ่ายถึงระดับบิล)</p>", unsafe_allow_html=True)
                 st.caption("💡 แผนภาพโครงสร้างต้นไม้ (Treemap) แสดงสัดส่วนรายจ่ายตั้งแต่ หมวดหมู่หลัก ➜ หมวดหมู่ย่อย ➜ รายละเอียดบิล (Note) ที่ซื้อไป")
@@ -1327,7 +1322,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v68"
+                key="editor_debt_v70"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1428,7 +1423,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v68"
+                key="editor_goals_v70"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1451,7 +1446,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v68"
+                key="editor_wallets_v70"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1473,7 +1468,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v68")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v70")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1483,7 +1478,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v68")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v70")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1542,7 +1537,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v68"
+                key="editor_finance_v70"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
