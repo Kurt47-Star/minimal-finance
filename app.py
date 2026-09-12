@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache พร้อมระบบสร้างชีต Budgets
+# 🚀 ระบบ Smart Cache 
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -319,7 +319,32 @@ PRIORITY_LEVELS = [
     "🧊 เผื่อไว้ (Optional)"
 ]
 
-goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
+# 🔥 สร้าง Dynamic Goal Options เพื่อโชว์ยอดเงินคงเหลือในเมนูดรอปดาวน์
+def get_dynamic_goal_options(is_withdraw=False):
+    options = []
+    # เพิ่มตัวเลือกคลังออมทั่วไปก่อนเสมอ
+    if not df_goals.empty:
+        total_allocated = pd.to_numeric(df_goals["สะสมแล้ว (บาท)"], errors="coerce").sum()
+    else:
+        total_allocated = 0.0
+    general_pool_amt = max(0.0, total_sav_now - total_allocated)
+    
+    if is_withdraw:
+        options.append(f"📦 คลังออมทั่วไป (ถอนได้: ฿{general_pool_amt:,.2f})")
+    else:
+        options.append("📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)")
+        
+    if not df_goals.empty:
+        for _, row in df_goals.iterrows():
+            g_name = str(row["ชื่อเป้าหมาย"]).strip()
+            g_saved = float(row["สะสมแล้ว (บาท)"]) if pd.notnull(row["สะสมแล้ว (บาท)"]) else 0.0
+            g_target = float(row["เป้าหมาย (บาท)"]) if pd.notnull(row["เป้าหมาย (บาท)"]) else 1.0
+            
+            if is_withdraw:
+                options.append(f"{g_name} (ถอนได้: ฿{g_saved:,.2f})")
+            else:
+                options.append(f"{g_name} (เป้าหมาย: ฿{g_target:,.2f})")
+    return options
 
 def calculate_savings_metrics(df_source):
     if df_source.empty or 'ประเภท' not in df_source.columns:
@@ -393,20 +418,23 @@ if app_mode == "📱 Mobile Mode":
     else:
         wallet_entry = st.selectbox("กระเป๋าเงิน (Wallet)", wallet_list, key="mb_wallet_select")
         if "เงินออม" in type_entry:
-            # 🔥 ตัดกู้/คืนเงินกู้ออก เหลือแค่ฝากและเบิก
             sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้"], horizontal=True)
-            if "เบิก" in sav_action:
+            
+            is_withdraw_mode = "เบิก" in sav_action
+            if is_withdraw_mode:
                 st.caption("📉 *ระบบจะหักเงินจากคลังเป้าหมาย และบังคับหักจากกระเป๋า '🌸 ออมสิน' โดยตรง*")
-                
+            
+            dynamic_options_mb = get_dynamic_goal_options(is_withdraw_mode)
+            
             mb_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🔀 แบ่งเปอร์เซ็นต์ (Split %)"], horizontal=True, key="mb_alloc_mode")
             
             if mb_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
-                selected_goal_mb = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", goal_options_list, key="mb_goal_slot")
+                selected_goal_mb = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", dynamic_options_mb, key="mb_goal_slot")
                 selected_goals_split_mb = []
             else:
                 selected_goal_mb = None
                 st.markdown("**🎯 เลือกเป้าหมายที่ต้องการจัดสรรเงิน:**")
-                selected_goals_split_mb = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", goal_options_list, default=goal_options_list[:2] if len(goal_options_list)>=2 else goal_options_list, key="mb_goals_split", label_visibility="collapsed")
+                selected_goals_split_mb = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", dynamic_options_mb, default=dynamic_options_mb[:2] if len(dynamic_options_mb)>=2 else dynamic_options_mb, key="mb_goals_split", label_visibility="collapsed")
             
             st.markdown(f"""
                 <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px;'>
@@ -446,7 +474,9 @@ if app_mode == "📱 Mobile Mode":
                 for idx, g in enumerate(selected_goals_split_mb):
                     with cols_pct[idx % 2]:
                         def_val = 100 // len(selected_goals_split_mb) if idx != len(selected_goals_split_mb)-1 else 100 - (100//len(selected_goals_split_mb))*(len(selected_goals_split_mb)-1)
-                        alloc_pcts_mb[g] = st.number_input(f"{g} (%)", min_value=0.0, max_value=100.0, value=float(def_val), step=5.0, key=f"mb_pct_{idx}")
+                        # Extract raw goal name for UI key
+                        raw_g_key = g.split(" (")[0]
+                        alloc_pcts_mb[g] = st.number_input(f"{raw_g_key} (%)", min_value=0.0, max_value=100.0, value=float(def_val), step=5.0, key=f"mb_pct_{idx}")
             else:
                 st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
                 
@@ -470,20 +500,21 @@ if app_mode == "📱 Mobile Mode":
                 # 🔥 จัดการลอจิกการหักเงินจากการเบิก
                 if "เบิกออกมาใช้" in sav_action: 
                     final_type = "ถอนเงินออม"
-                    wallet_entry = "🌸 ออมสิน" # บังคับหักจากออมสินเพื่อไม่ให้เป๋าอื่นรวน
+                    wallet_entry = "🌸 ออมสิน" 
                 
                 if mb_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
-                    sub_cat_final = f"{action_name} [{selected_goal_mb}]" if selected_goal_mb != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
+                    raw_goal_name = selected_goal_mb.split(" (")[0]
+                    sub_cat_final = f"{action_name} [{raw_goal_name}]" if raw_goal_name != "📦 คลังออมทั่วไป" else action_name
                     full_category = f"{main_cat}: {sub_cat_final}"
                     
-                    if selected_goal_mb != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" and not df_goals.empty:
+                    if raw_goal_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
                         for g_idx, g_row in df_goals.iterrows():
-                            if str(g_row["ชื่อเป้าหมาย"]) == selected_goal_mb:
+                            if str(g_row["ชื่อเป้าหมาย"]) == raw_goal_name:
                                 curr_saved = float(g_row["สะสมแล้ว (บาท)"]) if pd.notnull(g_row["สะสมแล้ว (บาท)"]) else 0.0
                                 if final_type == "เงินออม":
                                     new_saved = curr_saved + float(amount)
                                 else:
-                                    new_saved = max(0.0, curr_saved - float(amount)) # หักเงินจากสล็อต
+                                    new_saved = max(0.0, curr_saved - float(amount)) 
                                 goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
                                 fetch_goals.clear()
                                 break
@@ -493,18 +524,19 @@ if app_mode == "📱 Mobile Mode":
                     for g, pct in alloc_pcts_mb.items():
                         if pct > 0:
                             split_amt = float(amount) * (pct / 100.0)
-                            sub_cat_final = f"{action_name} [{g}]" if g != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
+                            raw_g_name = g.split(" (")[0]
+                            sub_cat_final = f"{action_name} [{raw_g_name}]" if raw_g_name != "📦 คลังออมทั่วไป" else action_name
                             full_category = f"{main_cat}: {sub_cat_final}"
                             split_note = f"{note} (แบ่ง {pct}%)" if note else f"แบ่ง {pct}%"
                             
-                            if g != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" and not df_goals.empty:
+                            if raw_g_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
                                 for g_idx, g_row in df_goals.iterrows():
-                                    if str(g_row["ชื่อเป้าหมาย"]) == g:
+                                    if str(g_row["ชื่อเป้าหมาย"]) == raw_g_name:
                                         curr_saved = float(g_row["สะสมแล้ว (บาท)"]) if pd.notnull(g_row["สะสมแล้ว (บาท)"]) else 0.0
                                         if final_type == "เงินออม":
                                             new_saved = curr_saved + float(split_amt)
                                         else:
-                                            new_saved = max(0.0, curr_saved - float(split_amt)) # หักเงินจากสล็อต
+                                            new_saved = max(0.0, curr_saved - float(split_amt)) 
                                         goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
                                         fetch_goals.clear()
                                         break
@@ -559,20 +591,24 @@ else:
                 main_cat = "โอนย้ายระหว่างกระเป๋า"
                 sub_cat = f"เข้า {to_wallet}"
             elif "เงินออม" in type_entry:
-                # 🔥 ลบการกู้/คืนเงินกู้ ออกจากเมนูเงินออม
+                # 🔥 ปรับเมนูเงินออม Desktop
                 sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้"], horizontal=True, key="dt_sav_action")
-                if "เบิก" in sav_action:
+                
+                is_withdraw_mode = "เบิก" in sav_action
+                if is_withdraw_mode:
                     st.caption("📉 *ระบบจะหักเงินจากคลังเป้าหมาย และบังคับหักจากกระเป๋า '🌸 ออมสิน' โดยตรง*")
+                
+                dynamic_options_dt = get_dynamic_goal_options(is_withdraw_mode)
                 
                 dt_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🔀 แบ่งเปอร์เซ็นต์ (Split %)"], horizontal=True, key="dt_alloc_mode")
                 
                 if dt_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
-                    selected_goal_dt = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", goal_options_list, key="dt_goal_slot")
+                    selected_goal_dt = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", dynamic_options_dt, key="dt_goal_slot")
                     selected_goals_split_dt = []
                 else:
                     selected_goal_dt = None
                     st.markdown("**🎯 เลือกเป้าหมายที่ต้องการจัดสรรเงิน:**")
-                    selected_goals_split_dt = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", goal_options_list, default=goal_options_list[:2] if len(goal_options_list)>=2 else goal_options_list, key="dt_goals_split", label_visibility="collapsed")
+                    selected_goals_split_dt = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", dynamic_options_dt, default=dynamic_options_dt[:2] if len(dynamic_options_dt)>=2 else dynamic_options_dt, key="dt_goals_split", label_visibility="collapsed")
                 
                 st.markdown(f"""
                     <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0;'>
@@ -615,7 +651,8 @@ else:
                         for idx, g in enumerate(selected_goals_split_dt):
                             with cols_pct[idx % 2]:
                                 def_val = 100 // len(selected_goals_split_dt) if idx != len(selected_goals_split_dt)-1 else 100 - (100//len(selected_goals_split_dt))*(len(selected_goals_split_dt)-1)
-                                alloc_pcts_dt[g] = st.number_input(f"{g} (%)", min_value=0.0, max_value=100.0, value=float(def_val), step=5.0, key=f"dt_pct_{idx}")
+                                raw_g_key = g.split(" (")[0]
+                                alloc_pcts_dt[g] = st.number_input(f"{raw_g_key} (%)", min_value=0.0, max_value=100.0, value=float(def_val), step=5.0, key=f"dt_pct_{idx}")
                     else:
                         st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
                         
@@ -636,23 +673,24 @@ else:
                     combined_datetime = datetime.datetime.combine(chosen_date_dt, final_time_dt)
                     
                     if final_type == "เงินออม":
-                        # 🔥 จัดการลอจิกการหักเงินจากการเบิก
+                        # 🔥 ลอจิกหักเงินแบบ Desktop
                         if "เบิกออกมาใช้" in sav_action: 
                             final_type = "ถอนเงินออม"
-                            wallet_entry = "🌸 ออมสิน" # บังคับหักจากออมสินเพื่อไม่ให้เป๋าอื่นรวน
+                            wallet_entry = "🌸 ออมสิน" 
                         
                         if dt_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
-                            sub_cat_final = f"{action_name} [{selected_goal_dt}]" if selected_goal_dt != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
+                            raw_goal_name = selected_goal_dt.split(" (")[0]
+                            sub_cat_final = f"{action_name} [{raw_goal_name}]" if raw_goal_name != "📦 คลังออมทั่วไป" else action_name
                             full_category = f"{main_cat}: {sub_cat_final}"
                             
-                            if selected_goal_dt != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" and not df_goals.empty:
+                            if raw_goal_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
                                 for g_idx, g_row in df_goals.iterrows():
-                                    if str(g_row["ชื่อเป้าหมาย"]) == selected_goal_dt:
+                                    if str(g_row["ชื่อเป้าหมาย"]) == raw_goal_name:
                                         curr_saved = float(g_row["สะสมแล้ว (บาท)"]) if pd.notnull(g_row["สะสมแล้ว (บาท)"]) else 0.0
                                         if final_type == "เงินออม":
                                             new_saved = curr_saved + float(amount)
                                         else:
-                                            new_saved = max(0.0, curr_saved - float(amount)) # หักเงินจากสล็อต
+                                            new_saved = max(0.0, curr_saved - float(amount)) 
                                         goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
                                         fetch_goals.clear()
                                         break
@@ -662,18 +700,19 @@ else:
                             for g, pct in alloc_pcts_dt.items():
                                 if pct > 0:
                                     split_amt = float(amount) * (pct / 100.0)
-                                    sub_cat_final = f"{action_name} [{g}]" if g != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" else action_name
+                                    raw_g_name = g.split(" (")[0]
+                                    sub_cat_final = f"{action_name} [{raw_g_name}]" if raw_g_name != "📦 คลังออมทั่วไป" else action_name
                                     full_category = f"{main_cat}: {sub_cat_final}"
                                     split_note = f"{note} (แบ่ง {pct}%)" if note else f"แบ่ง {pct}%"
                                     
-                                    if g != "📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)" and not df_goals.empty:
+                                    if raw_g_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
                                         for g_idx, g_row in df_goals.iterrows():
-                                            if str(g_row["ชื่อเป้าหมาย"]) == g:
+                                            if str(g_row["ชื่อเป้าหมาย"]) == raw_g_name:
                                                 curr_saved = float(g_row["สะสมแล้ว (บาท)"]) if pd.notnull(g_row["สะสมแล้ว (บาท)"]) else 0.0
                                                 if final_type == "เงินออม":
                                                     new_saved = curr_saved + float(split_amt)
                                                 else:
-                                                    new_saved = max(0.0, curr_saved - float(split_amt)) # หักเงินจากสล็อต
+                                                    new_saved = max(0.0, curr_saved - float(split_amt)) 
                                                 goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
                                                 fetch_goals.clear()
                                                 break
@@ -1009,7 +1048,7 @@ else:
                             ),
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v7"
+                        key="budget_editor_v8"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -1501,7 +1540,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v74"
+                key="editor_goals_v75"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1524,7 +1563,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v74"
+                key="editor_wallets_v75"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1546,7 +1585,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v74")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v75")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1556,7 +1595,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v74")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v75")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1615,7 +1654,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v74"
+                key="editor_finance_v75"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
