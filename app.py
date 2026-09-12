@@ -319,33 +319,6 @@ PRIORITY_LEVELS = [
     "🧊 เผื่อไว้ (Optional)"
 ]
 
-# 🔥 สร้าง Dynamic Goal Options เพื่อโชว์ยอดเงินคงเหลือในเมนูดรอปดาวน์
-def get_dynamic_goal_options(is_withdraw=False):
-    options = []
-    # เพิ่มตัวเลือกคลังออมทั่วไปก่อนเสมอ
-    if not df_goals.empty:
-        total_allocated = pd.to_numeric(df_goals["สะสมแล้ว (บาท)"], errors="coerce").sum()
-    else:
-        total_allocated = 0.0
-    general_pool_amt = max(0.0, total_sav_now - total_allocated)
-    
-    if is_withdraw:
-        options.append(f"📦 คลังออมทั่วไป (ถอนได้: ฿{general_pool_amt:,.2f})")
-    else:
-        options.append("📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)")
-        
-    if not df_goals.empty:
-        for _, row in df_goals.iterrows():
-            g_name = str(row["ชื่อเป้าหมาย"]).strip()
-            g_saved = float(row["สะสมแล้ว (บาท)"]) if pd.notnull(row["สะสมแล้ว (บาท)"]) else 0.0
-            g_target = float(row["เป้าหมาย (บาท)"]) if pd.notnull(row["เป้าหมาย (บาท)"]) else 1.0
-            
-            if is_withdraw:
-                options.append(f"{g_name} (ถอนได้: ฿{g_saved:,.2f})")
-            else:
-                options.append(f"{g_name} (เป้าหมาย: ฿{g_target:,.2f})")
-    return options
-
 def calculate_savings_metrics(df_source):
     if df_source.empty or 'ประเภท' not in df_source.columns:
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -370,6 +343,34 @@ def calculate_savings_metrics(df_source):
     return dep_val, with_val, loan_val, repay_val, net_flow, outstanding
 
 _, _, _, _, total_sav_now, outstanding_loan = calculate_savings_metrics(df)
+
+# 🔥 สร้าง Dynamic Goal Options เพื่อโชว์ยอดเงินคงเหลือในเมนูดรอปดาวน์
+def get_dynamic_goal_options(is_withdraw=False):
+    options = []
+    if not df_goals.empty:
+        total_allocated = pd.to_numeric(df_goals["สะสมแล้ว (บาท)"], errors="coerce").sum()
+    else:
+        total_allocated = 0.0
+    general_pool_amt = max(0.0, total_sav_now - total_allocated)
+    
+    if is_withdraw:
+        options.append(f"📦 คลังออมทั่วไป (ถอนได้: ฿{general_pool_amt:,.2f})")
+    else:
+        options.append("📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)")
+        
+    if not df_goals.empty:
+        for _, row in df_goals.iterrows():
+            g_name = str(row["ชื่อเป้าหมาย"]).strip()
+            g_saved = float(row["สะสมแล้ว (บาท)"]) if pd.notnull(row["สะสมแล้ว (บาท)"]) else 0.0
+            g_target = float(row["เป้าหมาย (บาท)"]) if pd.notnull(row["เป้าหมาย (บาท)"]) else 1.0
+            
+            if is_withdraw:
+                options.append(f"{g_name} (ถอนได้: ฿{g_saved:,.2f})")
+            else:
+                options.append(f"{g_name} (เป้าหมาย: ฿{g_target:,.2f})")
+    return options
+
+goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
 HONEY_POT_MAP = {
     "รายรับ": "#2a9d8f",     
@@ -422,7 +423,7 @@ if app_mode == "📱 Mobile Mode":
             
             is_withdraw_mode = "เบิก" in sav_action
             if is_withdraw_mode:
-                st.caption("📉 *ระบบจะหักเงินจากคลังเป้าหมาย และบังคับหักจากกระเป๋า '🌸 ออมสิน' โดยตรง*")
+                st.caption("📉 *ระบบจะหักยอดจากคลังเป้าหมาย และนำเงินไปเข้ากระเป๋าที่คุณเลือกด้านบนโดยอัตโนมัติ*")
             
             dynamic_options_mb = get_dynamic_goal_options(is_withdraw_mode)
             
@@ -474,7 +475,6 @@ if app_mode == "📱 Mobile Mode":
                 for idx, g in enumerate(selected_goals_split_mb):
                     with cols_pct[idx % 2]:
                         def_val = 100 // len(selected_goals_split_mb) if idx != len(selected_goals_split_mb)-1 else 100 - (100//len(selected_goals_split_mb))*(len(selected_goals_split_mb)-1)
-                        # Extract raw goal name for UI key
                         raw_g_key = g.split(" (")[0]
                         alloc_pcts_mb[g] = st.number_input(f"{raw_g_key} (%)", min_value=0.0, max_value=100.0, value=float(def_val), step=5.0, key=f"mb_pct_{idx}")
             else:
@@ -497,10 +497,9 @@ if app_mode == "📱 Mobile Mode":
             combined_datetime = datetime.datetime.combine(chosen_date, final_time)
             
             if final_type == "เงินออม":
-                # 🔥 จัดการลอจิกการหักเงินจากการเบิก
                 if "เบิกออกมาใช้" in sav_action: 
                     final_type = "ถอนเงินออม"
-                    wallet_entry = "🌸 ออมสิน" 
+                    # ไม่บังคับกระเป๋าเป็นออมสินแล้ว ปล่อยให้ยอดวิ่งเข้ากระเป๋าปลายทางที่ผู้ใช้เลือกเลย
                 
                 if mb_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
                     raw_goal_name = selected_goal_mb.split(" (")[0]
@@ -591,12 +590,11 @@ else:
                 main_cat = "โอนย้ายระหว่างกระเป๋า"
                 sub_cat = f"เข้า {to_wallet}"
             elif "เงินออม" in type_entry:
-                # 🔥 ปรับเมนูเงินออม Desktop
                 sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้"], horizontal=True, key="dt_sav_action")
                 
                 is_withdraw_mode = "เบิก" in sav_action
                 if is_withdraw_mode:
-                    st.caption("📉 *ระบบจะหักเงินจากคลังเป้าหมาย และบังคับหักจากกระเป๋า '🌸 ออมสิน' โดยตรง*")
+                    st.caption("📉 *ระบบจะหักยอดจากคลังเป้าหมาย และนำเงินไปบวกเข้ากระเป๋าที่คุณเลือกด้านบนโดยอัตโนมัติ*")
                 
                 dynamic_options_dt = get_dynamic_goal_options(is_withdraw_mode)
                 
@@ -673,10 +671,8 @@ else:
                     combined_datetime = datetime.datetime.combine(chosen_date_dt, final_time_dt)
                     
                     if final_type == "เงินออม":
-                        # 🔥 ลอจิกหักเงินแบบ Desktop
                         if "เบิกออกมาใช้" in sav_action: 
                             final_type = "ถอนเงินออม"
-                            wallet_entry = "🌸 ออมสิน" 
                         
                         if dt_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
                             raw_goal_name = selected_goal_dt.split(" (")[0]
@@ -1048,7 +1044,7 @@ else:
                             ),
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v8"
+                        key="budget_editor_v9"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -1439,7 +1435,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v74"
+                key="editor_debt_v75"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
