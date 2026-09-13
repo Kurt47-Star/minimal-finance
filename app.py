@@ -87,7 +87,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache 
+# 🚀 ระบบ Smart Cache พร้อมระบบสร้างและแก้ไขชีตอัตโนมัติ
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -120,24 +120,34 @@ def get_google_sheets():
         sheet_loan.append_row(["เงินต้น", "อัตราดอกเบี้ยปี", "ระยะเวลาเดือน", "งวดที่จ่ายแล้ว", "เดือนปีที่จ่ายล่าสุด"])
         sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
+    # 🔥 ล็อกเวลาจริงในชีต Cycles อัตโนมัติ (บังคับปิดยอดสิงหาคม + สร้างกันยายน)
     try:
         sheet_cycle = sh.worksheet("Cycles")
         try:
             records_c = sheet_cycle.get_all_values()
+            has_sept = any("September" in str(r[0]) for r in records_c if len(r) > 0)
+            
             for idx, r in enumerate(records_c):
                 if len(r) > 0 and "July 2026" in str(r[0]):
                     sheet_cycle.update_cell(idx + 1, 2, "2026-06-25 00:00:00")
                     sheet_cycle.update_cell(idx + 1, 3, "2026-07-31 23:59:59")
+                    sheet_cycle.update_cell(idx + 1, 4, "CLOSED")
                 elif len(r) > 0 and "August 2026" in str(r[0]):
-                    sheet_cycle.update_cell(idx + 1, 2, "2026-08-01 00:00:00")
-                    sheet_cycle.update_cell(idx + 1, 3, "")
+                    sheet_cycle.update_cell(idx + 1, 2, "2026-08-01 23:18:00")
+                    sheet_cycle.update_cell(idx + 1, 3, "2026-08-29 20:18:26")
+                    sheet_cycle.update_cell(idx + 1, 4, "CLOSED")
+            
+            # ถ้าระบบหาเดือนกันยาไม่เจอ ให้สร้างต่อท้ายอัตโนมัติ
+            if not has_sept:
+                sheet_cycle.append_row(["September 2026", "2026-08-29 20:18:27", "", "ACTIVE", 0.0, 0.0])
         except Exception:
             pass
     except:
         sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
         sheet_cycle.append_row(["July 2026", "2026-06-25 00:00:00", "2026-07-31 23:59:59", "CLOSED", 0.0, 2501.0])
-        sheet_cycle.append_row(["August 2026", "2026-08-01 00:00:00", "", "ACTIVE", 2501.0, 2501.0])
+        sheet_cycle.append_row(["August 2026", "2026-08-01 23:18:00", "2026-08-29 20:18:26", "CLOSED", 2501.0, 2501.0])
+        sheet_cycle.append_row(["September 2026", "2026-08-29 20:18:27", "", "ACTIVE", 0.0, 0.0])
 
     try:
         sheet_debt = sh.worksheet("Receivables")
@@ -499,7 +509,6 @@ if app_mode == "📱 Mobile Mode":
             if final_type == "เงินออม":
                 if "เบิกออกมาใช้" in sav_action: 
                     final_type = "ถอนเงินออม"
-                    # ไม่บังคับกระเป๋าเป็นออมสินแล้ว ปล่อยให้ยอดวิ่งเข้ากระเป๋าปลายทางที่ผู้ใช้เลือกเลย
                 
                 if mb_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
                     raw_goal_name = selected_goal_mb.split(" (")[0]
@@ -590,6 +599,7 @@ else:
                 main_cat = "โอนย้ายระหว่างกระเป๋า"
                 sub_cat = f"เข้า {to_wallet}"
             elif "เงินออม" in type_entry:
+                # 🔥 ปรับเมนูเงินออม Desktop
                 sav_action = st.radio("การดำเนินการเงินออม:", ["📥 ฝากเงินเพิ่ม", "🔓 เบิกออกมาใช้"], horizontal=True, key="dt_sav_action")
                 
                 is_withdraw_mode = "เบิก" in sav_action
@@ -1044,7 +1054,7 @@ else:
                             ),
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v9"
+                        key="budget_editor_v10"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -1435,7 +1445,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v75"
+                key="editor_debt_v76"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1536,7 +1546,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v75"
+                key="editor_goals_v76"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1559,7 +1569,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v75"
+                key="editor_wallets_v76"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1581,7 +1591,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v75")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v76")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1591,7 +1601,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v75")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v76")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1650,7 +1660,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v75"
+                key="editor_finance_v76"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
