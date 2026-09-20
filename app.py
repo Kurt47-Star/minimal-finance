@@ -352,17 +352,33 @@ def calculate_savings_metrics(df_source):
 
 _, _, _, _, total_sav_now, outstanding_loan = calculate_savings_metrics(df)
 
+# 🔥 ฟังก์ชันหาลิมิตยอดเงิน (ฝากได้ไม่เกินเป้า / ถอนได้ไม่เกินที่มี)
+def get_goal_limit(goal_label, df_g, is_withdraw):
+    raw_g = goal_label.split(" (")[0]
+    if raw_g == "📦 คลังออมทั่วไป" or df_g.empty:
+        if is_withdraw:
+            total_allocated = pd.to_numeric(df_g["สะสมแล้ว (บาท)"], errors="coerce").sum() if not df_g.empty else 0.0
+            return max(0.0, total_sav_now - total_allocated)
+        else:
+            return float('inf') # ทั่วไปไม่มีเป้าหมาย ฝากได้ไม่อั้น
+            
+    row = df_g[df_g['ชื่อเป้าหมาย'] == raw_g]
+    if not row.empty:
+        s = float(row.iloc[0]['สะสมแล้ว (บาท)'])
+        if is_withdraw:
+            return max(0.0, s) 
+        else:
+            t = float(row.iloc[0]['เป้าหมาย (บาท)'])
+            return max(0.0, t - s) 
+    return float('inf')
+
 # 🔥 สร้าง Dynamic Goal Options
 def get_dynamic_goal_options(is_withdraw=False):
     options = []
-    if not df_goals.empty:
-        total_allocated = pd.to_numeric(df_goals["สะสมแล้ว (บาท)"], errors="coerce").sum()
-    else:
-        total_allocated = 0.0
-    general_pool_amt = max(0.0, total_sav_now - total_allocated)
+    general_limit = get_goal_limit("📦 คลังออมทั่วไป", df_goals, is_withdraw)
     
     if is_withdraw:
-        options.append(f"📦 คลังออมทั่วไป (ถอนได้: ฿{general_pool_amt:,.2f})")
+        options.append(f"📦 คลังออมทั่วไป (ถอนได้: ฿{general_limit:,.2f})")
     else:
         options.append("📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)")
         
@@ -389,15 +405,16 @@ HONEY_POT_MAP = {
 }
 SUB_CAT_PALETTE = ["#124d54", "#f9744b", "#e9c46a", "#2a9d8f", "#457b9d", "#f4a261", "#8ab17d", "#e76f51", "#d62828", "#003049", "#fcbf49"]
 
-# 🔥 ฟังก์ชันสไลเดอร์ถ่วงน้ำหนักอัตโนมัติ (Auto-balancing Sliders Logic)
-def setup_balance_logic(mode, selected_goals):
+# 🔥 อัลกอริทึมสไลเดอร์ปรับตัวอัจฉริยะ (Auto-balancing Sliders Logic)
+def setup_balance_logic(mode, selected_goals, caps):
     state_key = f"{mode}_alloc_pcts"
     
-    # ล้างและเซ็ตค่าตั้งต้นให้หารเท่าๆ กันถ้ายังไม่มี
     if state_key not in st.session_state or set(st.session_state[state_key].keys()) != set(selected_goals):
         n = len(selected_goals)
         if n > 0:
-            st.session_state[state_key] = {g: 100.0/n for g in selected_goals}
+            st.session_state[state_key] = {}
+            for g in selected_goals:
+                st.session_state[state_key][g] = min(100.0/n, caps[g])
         else:
             st.session_state[state_key] = {}
             
@@ -405,31 +422,26 @@ def setup_balance_logic(mode, selected_goals):
         new_val = st.session_state[f"{mode}_slider_{changed_goal}"]
         old_val = st.session_state[state_key][changed_goal]
         diff = new_val - old_val
-        if abs(diff) < 0.01: return # เลื่อนน้อยมากไม่ต้องปรับ
+        if abs(diff) < 0.01: return 
         
         others = [g for g in selected_goals if g != changed_goal]
         if not others:
-            st.session_state[state_key][changed_goal] = 100.0
-            st.session_state[f"{mode}_slider_{changed_goal}"] = 100.0
+            st.session_state[state_key][changed_goal] = min(100.0, caps[changed_goal])
+            st.session_state[f"{mode}_slider_{changed_goal}"] = st.session_state[state_key][changed_goal]
             return
             
         other_sum = sum(st.session_state[state_key][g] for g in others)
         
-        # ปรับลดตัวอื่นตามสัดส่วนของตัวมันเอง
         for g in others:
             if other_sum > 0:
                 st.session_state[state_key][g] -= diff * (st.session_state[state_key][g] / other_sum)
             else:
                 st.session_state[state_key][g] -= diff / len(others)
-            st.session_state[state_key][g] = max(0.0, min(100.0, st.session_state[state_key][g]))
+            
+            # บังคับห้ามเกิน Cap (เป้าหมายสูงสุด)
+            st.session_state[state_key][g] = max(0.0, min(caps[g], st.session_state[state_key][g]))
             
         st.session_state[state_key][changed_goal] = new_val
-        
-        # บังคับยอดรวมให้เป็น 100 เสมอ ป้องกันจุดทศนิยมรวน
-        total = sum(st.session_state[state_key].values())
-        if total > 0:
-            for g in selected_goals:
-                st.session_state[state_key][g] = (st.session_state[state_key][g] / total) * 100.0
 
     return state_key, on_change_slider
 
@@ -516,30 +528,56 @@ if app_mode == "📱 Mobile Mode":
         else:
             chosen_time_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="mb_time_type")
 
-    # 🔥 ปลดล็อก Form เพื่อให้สไลเดอร์ทำงานแบบเรียลไทม์ได้
+    # 🔥 ปลดล็อก Form ให้กรอกยอดก่อน
     amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key="mb_amount")
     
     alloc_pcts_mb = {}
     if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
         if len(selected_goals_split_mb) > 0:
-            st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (สไลเดอร์จะช่วยปัดให้รวม 100% อัตโนมัติ)</p>", unsafe_allow_html=True)
+            st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (เลื่อนชดเชยอัตโนมัติ ภายใน 100%)</p>", unsafe_allow_html=True)
             
-            state_key, on_change_slider = setup_balance_logic("mb", selected_goals_split_mb)
             current_amt = amount if amount else 0.0
             
+            # 🔥 คำนวณเพดานสไลเดอร์ (Caps)
+            caps_mb = {}
             for g in selected_goals_split_mb:
-                st.session_state[f"mb_slider_{g}"] = st.session_state[state_key][g]
-                raw_g_key = g.split(" (")[0]
-                split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
-                
-                st.slider(
-                    f"{raw_g_key} (ได้แบ่ง ฿{split_thb:,.0f})", 
-                    min_value=0.0, max_value=100.0, step=1.0, format="%.1f%%",
-                    key=f"mb_slider_{g}",
-                    on_change=on_change_slider,
-                    args=(g,)
-                )
+                limit_amt = get_goal_limit(g, df_goals, is_withdraw_mode)
+                if current_amt > 0:
+                    caps_mb[g] = min(100.0, (limit_amt / current_amt) * 100.0)
+                else:
+                    caps_mb[g] = 100.0
+                    
+            state_key, on_change_slider = setup_balance_logic("mb", selected_goals_split_mb, caps_mb)
+            
+            cols_pct = st.columns(2)
+            for idx, g in enumerate(selected_goals_split_mb):
+                with cols_pct[idx % 2]:
+                    raw_g_key = g.split(" (")[0]
+                    _max = caps_mb[g]
+                    
+                    if _max <= 0.0:
+                        st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
+                        st.session_state[state_key][g] = 0.0
+                    else:
+                        if st.session_state[state_key][g] > _max:
+                            st.session_state[state_key][g] = _max
+                        st.session_state[f"mb_slider_{g}"] = st.session_state[state_key][g]
+                        
+                        split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
+                        cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
+                        
+                        st.slider(
+                            f"{raw_g_key} (ได้แบ่ง ฿{split_thb:,.0f}{cap_text})", 
+                            min_value=0.0, max_value=float(_max), step=0.1, format="%.1f%%",
+                            key=f"mb_slider_{g}",
+                            on_change=on_change_slider,
+                            args=(g,)
+                        )
             alloc_pcts_mb = st.session_state[state_key]
+            
+            total_cap_sum = sum(caps_mb.values())
+            if total_cap_sum < 99.9 and current_amt > 0:
+                st.warning(f"⚠️ เงินที่คุณระบุมากเกินกว่าเป้าหมายที่เลือกไว้จะรับได้! (ใส่ได้สูงสุด {total_cap_sum:.1f}%) กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกด้านบนเพื่อรับยอดเงินที่ล้น")
         else:
             st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
             
@@ -553,6 +591,16 @@ if app_mode == "📱 Mobile Mode":
                 if len(selected_goals_split_mb) == 0:
                     st.error("❌ กรุณาเลือกเป้าหมายที่จะแบ่งเงินครับ")
                     st.stop()
+                total_pct = sum(alloc_pcts_mb.values())
+                total_cap_sum = sum(caps_mb.values())
+                
+                if total_pct < 99.9:
+                    if total_cap_sum < 99.9:
+                        st.error("❌ เงินล้นเป้าหมาย! กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกสล็อตเงินออม เพื่อให้เงินส่วนที่เหลือมีที่เก็บครับ")
+                        st.stop()
+                    else:
+                        st.error(f"❌ สัดส่วนเปอร์เซ็นต์รวมต้องเท่ากับ 100% (ตอนนี้รวมได้ {total_pct:.1f}%)")
+                        st.stop()
                     
             final_type = type_entry.split(" ")[1]
             final_time = datetime.datetime.now(TZ_TH).time() if time_shortcut == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_str, datetime.datetime.now(TZ_TH).time())
@@ -605,7 +653,6 @@ if app_mode == "📱 Mobile Mode":
                 full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
                 sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
             
-            # เคลียร์ Input เสมือนการกดใน Form
             if "mb_amount" in st.session_state: del st.session_state["mb_amount"]
             if "mb_note" in st.session_state: del st.session_state["mb_note"]
             fetch_main_data.clear()
@@ -702,33 +749,56 @@ else:
                 else:
                     chosen_time_dt_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="dt_time_type")
 
-            # 🔥 ปลดล็อก Form Desktop
+            # 🔥 ปลดล็อก Form ให้กรอกยอดก่อน
             amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key="dt_amount")
             
             alloc_pcts_dt = {}
             if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
                 if len(selected_goals_split_dt) > 0:
-                    st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (สไลเดอร์จะช่วยปัดให้รวม 100% อัตโนมัติ)</p>", unsafe_allow_html=True)
+                    st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (เลื่อนชดเชยอัตโนมัติ ภายใน 100%)</p>", unsafe_allow_html=True)
                     
-                    state_key, on_change_slider = setup_balance_logic("dt", selected_goals_split_dt)
                     current_amt = amount if amount else 0.0
+                    
+                    # 🔥 คำนวณเพดานสไลเดอร์ (Caps)
+                    caps_dt = {}
+                    for g in selected_goals_split_dt:
+                        limit_amt = get_goal_limit(g, df_goals, is_withdraw_mode)
+                        if current_amt > 0:
+                            caps_dt[g] = min(100.0, (limit_amt / current_amt) * 100.0)
+                        else:
+                            caps_dt[g] = 100.0
+                            
+                    state_key, on_change_slider = setup_balance_logic("dt", selected_goals_split_dt, caps_dt)
                     
                     cols_pct = st.columns(2)
                     for idx, g in enumerate(selected_goals_split_dt):
-                        st.session_state[f"dt_slider_{g}"] = st.session_state[state_key][g]
-                        
                         with cols_pct[idx % 2]:
                             raw_g_key = g.split(" (")[0]
-                            split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
+                            _max = caps_dt[g]
                             
-                            st.slider(
-                                f"{raw_g_key} (ได้แบ่ง ฿{split_thb:,.0f})", 
-                                min_value=0.0, max_value=100.0, step=1.0, format="%.1f%%",
-                                key=f"dt_slider_{g}",
-                                on_change=on_change_slider,
-                                args=(g,)
-                            )
+                            if _max <= 0.0:
+                                st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
+                                st.session_state[state_key][g] = 0.0
+                            else:
+                                if st.session_state[state_key][g] > _max:
+                                    st.session_state[state_key][g] = _max
+                                st.session_state[f"dt_slider_{g}"] = st.session_state[state_key][g]
+                                
+                                split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
+                                cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
+                                
+                                st.slider(
+                                    f"{raw_g_key} (ได้แบ่ง ฿{split_thb:,.0f}{cap_text})", 
+                                    min_value=0.0, max_value=float(_max), step=0.1, format="%.1f%%",
+                                    key=f"dt_slider_{g}",
+                                    on_change=on_change_slider,
+                                    args=(g,)
+                                )
                     alloc_pcts_dt = st.session_state[state_key]
+                    
+                    total_cap_sum = sum(caps_dt.values())
+                    if total_cap_sum < 99.9 and current_amt > 0:
+                        st.warning(f"⚠️ เงินที่คุณระบุมากเกินกว่าเป้าหมายที่เลือกไว้จะรับได้! (ใส่ได้สูงสุด {total_cap_sum:.1f}%) กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกด้านบนเพื่อรับยอดเงินที่ล้น")
                 else:
                     st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
                     
@@ -742,6 +812,16 @@ else:
                         if len(selected_goals_split_dt) == 0:
                             st.error("❌ กรุณาเลือกเป้าหมายที่จะแบ่งเงินครับ")
                             st.stop()
+                        total_pct = sum(alloc_pcts_dt.values())
+                        total_cap_sum = sum(caps_dt.values())
+                        
+                        if total_pct < 99.9:
+                            if total_cap_sum < 99.9:
+                                st.error("❌ เงินล้นเป้าหมาย! กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกสล็อตเงินออม เพื่อให้เงินส่วนที่เหลือมีที่เก็บครับ")
+                                st.stop()
+                            else:
+                                st.error(f"❌ สัดส่วนเปอร์เซ็นต์รวมต้องเท่ากับ 100% (ตอนนี้รวมได้ {total_pct:.1f}%)")
+                                st.stop()
                             
                     final_type = type_entry.split(" ")[1]
                     final_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut_dt == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_dt_str, datetime.datetime.now(TZ_TH).time())
@@ -1123,7 +1203,7 @@ else:
                             ),
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v10"
+                        key="budget_editor_v11"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -1514,7 +1594,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v77"
+                key="editor_debt_v78"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1615,7 +1695,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v77"
+                key="editor_goals_v78"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1638,7 +1718,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v77"
+                key="editor_wallets_v78"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1660,7 +1740,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v77")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v78")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1670,7 +1750,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v77")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v78")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1729,7 +1809,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v77"
+                key="editor_finance_v78"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
