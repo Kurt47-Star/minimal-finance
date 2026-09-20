@@ -52,6 +52,21 @@ st.markdown("""
     .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
     .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
+    .calib-box-match {
+        background-color: rgba(42, 157, 143, 0.12);
+        border: 1px solid #2a9d8f;
+        border-radius: 16px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+    }
+    .calib-box-diff {
+        background-color: rgba(249, 116, 75, 0.12);
+        border: 1px solid #f9744b;
+        border-radius: 16px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+    }
+    
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 """, unsafe_allow_html=True)
@@ -283,16 +298,8 @@ goals_data = fetch_goals()
 df_goals = pd.DataFrame(goals_data) if goals_data else pd.DataFrame(columns=["ไอคอน", "ชื่อเป้าหมาย", "เป้าหมาย (บาท)", "สะสมแล้ว (บาท)", "ความสำคัญ"])
 if 'ความสำคัญ' not in df_goals.columns:
     df_goals['ความสำคัญ'] = "⭐ ปานกลาง (Medium)"
-else:
-    df_goals['ความสำคัญ'] = df_goals['ความสำคัญ'].replace(r'^\s*$', "⭐ ปานกลาง (Medium)", regex=True)
 
-PRIORITY_LEVELS = [
-    "🚀 ด่วนที่สุด (Critical)", 
-    "🔥 สูง (High)", 
-    "⭐ ปานกลาง (Medium)", 
-    "🟢 ต่ำ (Low)", 
-    "🧊 เผื่อไว้ (Optional)"
-]
+PRIORITY_LEVELS = ["🚀 ด่วนที่สุด (Critical)", "🔥 สูง (High)", "⭐ ปานกลาง (Medium)", "🟢 ต่ำ (Low)", "🧊 เผื่อไว้ (Optional)"]
 
 def calculate_savings_metrics(df_source):
     if df_source.empty or 'ประเภท' not in df_source.columns:
@@ -339,7 +346,6 @@ def get_goal_limit(goal_label, df_g, is_withdraw):
             return max(0.0, t - s) 
     return float('inf')
 
-# 🔥 สร้าง Dynamic Goal Options
 def get_dynamic_goal_options(is_withdraw=False):
     options = []
     general_limit = get_goal_limit("📦 คลังออมทั่วไป", df_goals, is_withdraw)
@@ -386,13 +392,11 @@ def setup_balance_logic(mode, selected_goals, caps):
         diff = new_val - old_val
         if abs(diff) < 0.01: return 
         
-        # คัดกรองตัวที่ปลดล็อก กับ ตัวที่ถูกล็อกไว้
         unlocked_others = [g for g in selected_goals if g != changed_goal and not st.session_state.get(f"{lock_prefix}{g}", False)]
         locked_others = [g for g in selected_goals if g != changed_goal and st.session_state.get(f"{lock_prefix}{g}", False)]
         
         locked_sum = sum(st.session_state[state_key][g] for g in locked_others)
         
-        # บังคับห้ามเลื่อนเกินเปอร์เซ็นต์ที่เหลือจากตัวที่โดนล็อก
         max_allowed = 100.0 - locked_sum
         if new_val > max_allowed:
             new_val = max_allowed
@@ -408,14 +412,12 @@ def setup_balance_logic(mode, selected_goals, caps):
         target_unlocked_sum = max(0.0, 100.0 - locked_sum - new_val)
         current_unlocked_sum = sum(st.session_state[state_key][g] for g in unlocked_others)
         
-        # 1. เกลี่ยเปอร์เซ็นต์คร่าวๆ ให้กับตัวที่ปลดล็อกตามสัดส่วนเดิม
         for g in unlocked_others:
             if current_unlocked_sum > 0:
                 st.session_state[state_key][g] -= diff * (st.session_state[state_key][g] / current_unlocked_sum)
             else:
                 st.session_state[state_key][g] = target_unlocked_sum / len(unlocked_others)
 
-        # 2. วนลูปบีบอัดเปอร์เซ็นต์ไม่ให้เกิน Cap (เพดานสูงสุดของสล็อต) หรือหลุดติดลบ
         active_unlocked = unlocked_others.copy()
         for _ in range(10): 
             out_of_bounds = False
@@ -494,7 +496,8 @@ if app_mode == "📱 Mobile Mode":
             
             dynamic_options_mb = get_dynamic_goal_options(is_withdraw_mode)
             
-            mb_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🔀 แบ่งเปอร์เซ็นต์ (Split %)"], horizontal=True, key="mb_alloc_mode")
+            # 🔥 เพิ่มโหมด Manual กลับมาให้เลือก
+            mb_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)", "⌨️ กรอกสัดส่วนเอง (Manual %)"], horizontal=True, key="mb_alloc_mode")
             
             if mb_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
                 selected_goal_mb = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", dynamic_options_mb, key="mb_goal_slot")
@@ -531,66 +534,72 @@ if app_mode == "📱 Mobile Mode":
         else:
             chosen_time_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="mb_time_type")
 
-    # 🔥 ปลดล็อก Form ให้กรอกยอดก่อน
     amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key="mb_amount")
     
     alloc_pcts_mb = {}
-    if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
-        if len(selected_goals_split_mb) > 0:
-            st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (ปรับสมดุลให้อัตโนมัติ)</p>", unsafe_allow_html=True)
-            
-            current_amt = amount if amount else 0.0
-            
-            # 🔥 คำนวณเพดานสไลเดอร์ (Caps)
-            caps_mb = {}
-            for g in selected_goals_split_mb:
-                limit_amt = get_goal_limit(g, df_goals, is_withdraw_mode)
-                if current_amt > 0:
-                    caps_mb[g] = min(100.0, (limit_amt / current_amt) * 100.0)
-                else:
-                    caps_mb[g] = 100.0
-                    
-            state_key, on_change_slider = setup_balance_logic("mb", selected_goals_split_mb, caps_mb)
-            
-            cols_pct = st.columns(2)
-            for idx, g in enumerate(selected_goals_split_mb):
-                with cols_pct[idx % 2]:
-                    raw_g_key = g.split(" (")[0]
-                    _max = caps_mb[g]
-                    
-                    if _max <= 0.0:
-                        st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
-                        st.session_state[state_key][g] = 0.0
+    if "เงินออม" in type_entry:
+        if mb_alloc_mode == "⌨️ กรอกสัดส่วนเอง (Manual %)":
+            if len(selected_goals_split_mb) > 0:
+                st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (รวมต้องเท่ากับ 100%)</p>", unsafe_allow_html=True)
+                cols_pct = st.columns(2)
+                for idx, g in enumerate(selected_goals_split_mb):
+                    with cols_pct[idx % 2]:
+                        def_val = 100.0 / len(selected_goals_split_mb)
+                        raw_g_key = g.split(" (")[0]
+                        alloc_pcts_mb[g] = st.number_input(f"{raw_g_key} (%)", min_value=0.0, max_value=100.0, value=float(def_val), step=1.0, key=f"mb_manual_pct_{idx}")
+            else:
+                st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
+                
+        elif mb_alloc_mode == "🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)":
+            if len(selected_goals_split_mb) > 0:
+                st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (ปรับสมดุลให้อัตโนมัติ)</p>", unsafe_allow_html=True)
+                
+                current_amt = amount if amount else 0.0
+                caps_mb = {}
+                for g in selected_goals_split_mb:
+                    limit_amt = get_goal_limit(g, df_goals, is_withdraw_mode)
+                    if current_amt > 0:
+                        caps_mb[g] = min(100.0, (limit_amt / current_amt) * 100.0)
                     else:
-                        if st.session_state[state_key][g] > _max:
-                            st.session_state[state_key][g] = _max
-                        st.session_state[f"mb_slider_{g}"] = st.session_state[state_key][g]
+                        caps_mb[g] = 100.0
                         
-                        split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
-                        cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
+                state_key, on_change_slider = setup_balance_logic("mb", selected_goals_split_mb, caps_mb)
+                
+                cols_pct = st.columns(2)
+                for idx, g in enumerate(selected_goals_split_mb):
+                    with cols_pct[idx % 2]:
+                        raw_g_key = g.split(" (")[0]
+                        _max = caps_mb[g]
                         
-                        st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
-                        
-                        sc_slider, sc_lock = st.columns([4.5, 1])
-                        with sc_slider:
-                            st.slider(
-                                "hidden", 
-                                min_value=0.0, max_value=float(_max), step=0.1, format="%.1f%%",
-                                key=f"mb_slider_{g}",
-                                on_change=on_change_slider,
-                                args=(g,),
-                                label_visibility="collapsed"
-                            )
-                        with sc_lock:
-                            st.checkbox("🔒", key=f"lock_mb_{g}", help="ล็อกเป้าหมายนี้ไม่ให้เปลี่ยนสัดส่วน")
+                        if _max <= 0.0:
+                            st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
+                            st.session_state[state_key][g] = 0.0
+                        else:
+                            if st.session_state[state_key][g] > _max:
+                                st.session_state[state_key][g] = _max
+                            st.session_state[f"mb_slider_{g}"] = st.session_state[state_key][g]
+                            
+                            split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
+                            cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
+                            
+                            st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                            
+                            sc_slider, sc_lock = st.columns([4.5, 1])
+                            with sc_slider:
+                                st.slider(
+                                    "hidden", 
+                                    min_value=0.0, max_value=float(_max), step=0.1, format="%.1f%%",
+                                    key=f"mb_slider_{g}",
+                                    on_change=on_change_slider,
+                                    args=(g,),
+                                    label_visibility="collapsed"
+                                )
+                            with sc_lock:
+                                st.checkbox("🔒", key=f"lock_mb_{g}", help="ล็อกเป้าหมายนี้ไม่ให้เปลี่ยนสัดส่วน")
 
-            alloc_pcts_mb = st.session_state[state_key]
-            
-            total_cap_sum = sum(caps_mb.values())
-            if total_cap_sum < 99.9 and current_amt > 0:
-                st.warning(f"⚠️ เงินที่คุณระบุมากเกินกว่าเป้าหมายที่เลือกไว้จะรับได้! (ใส่ได้สูงสุด {total_cap_sum:.1f}%) กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกด้านบนเพื่อรับยอดเงินที่ล้น")
-        else:
-            st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
+                alloc_pcts_mb = st.session_state[state_key]
+            else:
+                st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
             
     note = st.text_input("Note", placeholder="Optional...", key="mb_note")
     
@@ -598,19 +607,24 @@ if app_mode == "📱 Mobile Mode":
         if amount is None or amount <= 0:
             st.error("กรุณาระบุจำนวนเงินครับ")
         else:
-            if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
+            if "เงินออม" in type_entry and mb_alloc_mode in ["🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)", "⌨️ กรอกสัดส่วนเอง (Manual %)"]:
                 if len(selected_goals_split_mb) == 0:
                     st.error("❌ กรุณาเลือกเป้าหมายที่จะแบ่งเงินครับ")
                     st.stop()
                 total_pct = sum(alloc_pcts_mb.values())
-                total_cap_sum = sum(caps_mb.values())
                 
-                if total_pct < 99.9:
-                    if total_cap_sum < 99.9:
-                        st.error("❌ เงินล้นเป้าหมาย! กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกสล็อตเงินออม เพื่อให้เงินส่วนที่เหลือมีที่เก็บครับ")
-                        st.stop()
+                # 🔥 ป้องกันจุดทศนิยมรวน ยอมให้คลาดเคลื่อนนิดหน่อยได้ถ้าใช้แบบ Manual
+                if abs(total_pct - 100.0) > 0.1:
+                    if mb_alloc_mode == "🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)":
+                        total_cap_sum = sum(caps_mb.values())
+                        if total_cap_sum < 99.5:
+                            st.error("❌ เงินล้นเป้าหมาย! (สไลเดอร์ตัน) กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในช่องด้านบนเพื่อให้ระบบมีสล็อตเก็บเงินส่วนที่ล้นครับ")
+                            st.stop()
+                        else:
+                            st.error(f"❌ สัดส่วนรวมต้องเท่ากับ 100% (ตอนนี้รวมได้ {total_pct:.1f}%) กรุณาปลดล็อก 🔒 บางเป้าหมายเพื่อให้ระบบเกลี่ยเงินได้ครบครับ")
+                            st.stop()
                     else:
-                        st.error(f"❌ สัดส่วนเปอร์เซ็นต์รวมต้องเท่ากับ 100% (ตอนนี้รวมได้ {total_pct:.1f}%)")
+                        st.error(f"❌ สัดส่วนเปอร์เซ็นต์รวมต้องเท่ากับ 100% (ตอนนี้คุณกรอกไป {total_pct:.1f}%)")
                         st.stop()
                     
             final_type = type_entry.split(" ")[1]
@@ -720,7 +734,8 @@ else:
                 
                 dynamic_options_dt = get_dynamic_goal_options(is_withdraw_mode)
                 
-                dt_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🔀 แบ่งเปอร์เซ็นต์ (Split %)"], horizontal=True, key="dt_alloc_mode")
+                # 🔥 เพิ่มโหมด Manual กลับมาให้เลือก
+                dt_alloc_mode = st.radio("รูปแบบการจัดสรรเงินออม:", ["🎯 เป้าหมายเดียว (Single)", "🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)", "⌨️ กรอกสัดส่วนเอง (Manual %)"], horizontal=True, key="dt_alloc_mode")
                 
                 if dt_alloc_mode == "🎯 เป้าหมายเดียว (Single)":
                     selected_goal_dt = st.selectbox("🎯 เลือกเป้าหมายออมเงิน (Slot):", dynamic_options_dt, key="dt_goal_slot")
@@ -760,86 +775,103 @@ else:
                 else:
                     chosen_time_dt_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="dt_time_type")
 
-            # 🔥 ปลดล็อก Form ให้กรอกยอดก่อน
             amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key="dt_amount")
             
             alloc_pcts_dt = {}
-            if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
-                if len(selected_goals_split_dt) > 0:
-                    st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (ปรับสมดุลให้อัตโนมัติ)</p>", unsafe_allow_html=True)
-                    
-                    current_amt = amount if amount else 0.0
-                    
-                    # 🔥 คำนวณเพดานสไลเดอร์ (Caps)
-                    caps_dt = {}
-                    for g in selected_goals_split_dt:
-                        limit_amt = get_goal_limit(g, df_goals, is_withdraw_mode)
-                        if current_amt > 0:
-                            caps_dt[g] = min(100.0, (limit_amt / current_amt) * 100.0)
-                        else:
-                            caps_dt[g] = 100.0
-                            
-                    state_key, on_change_slider = setup_balance_logic("dt", selected_goals_split_dt, caps_dt)
-                    
-                    cols_pct = st.columns(2)
-                    for idx, g in enumerate(selected_goals_split_dt):
-                        with cols_pct[idx % 2]:
-                            raw_g_key = g.split(" (")[0]
-                            _max = caps_dt[g]
-                            
-                            if _max <= 0.0:
-                                st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
-                                st.session_state[state_key][g] = 0.0
+            if "เงินออม" in type_entry:
+                if dt_alloc_mode == "⌨️ กรอกสัดส่วนเอง (Manual %)":
+                    if len(selected_goals_split_dt) > 0:
+                        st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (รวมต้องเท่ากับ 100%)</p>", unsafe_allow_html=True)
+                        cols_pct = st.columns(2)
+                        for idx, g in enumerate(selected_goals_split_dt):
+                            with cols_pct[idx % 2]:
+                                def_val = 100.0 / len(selected_goals_split_dt)
+                                raw_g_key = g.split(" (")[0]
+                                alloc_pcts_dt[g] = st.number_input(f"{raw_g_key} (%)", min_value=0.0, max_value=100.0, value=float(def_val), step=1.0, key=f"dt_manual_pct_{idx}")
+                    else:
+                        st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
+                        
+                elif dt_alloc_mode == "🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)":
+                    if len(selected_goals_split_dt) > 0:
+                        st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (ปรับสมดุลให้อัตโนมัติ)</p>", unsafe_allow_html=True)
+                        
+                        current_amt = amount if amount else 0.0
+                        
+                        # 🔥 คำนวณเพดานสไลเดอร์ (Caps)
+                        caps_dt = {}
+                        for g in selected_goals_split_dt:
+                            limit_amt = get_goal_limit(g, df_goals, is_withdraw_mode)
+                            if current_amt > 0:
+                                caps_dt[g] = min(100.0, (limit_amt / current_amt) * 100.0)
                             else:
-                                if st.session_state[state_key][g] > _max:
-                                    st.session_state[state_key][g] = _max
-                                st.session_state[f"dt_slider_{g}"] = st.session_state[state_key][g]
+                                caps_dt[g] = 100.0
                                 
-                                split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
-                                cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
+                        state_key, on_change_slider = setup_balance_logic("dt", selected_goals_split_dt, caps_dt)
+                        
+                        cols_pct = st.columns(2)
+                        for idx, g in enumerate(selected_goals_split_dt):
+                            with cols_pct[idx % 2]:
+                                raw_g_key = g.split(" (")[0]
+                                _max = caps_dt[g]
                                 
-                                st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
-                                
-                                sc_slider, sc_lock = st.columns([4.5, 1])
-                                with sc_slider:
-                                    st.slider(
-                                        "hidden", 
-                                        min_value=0.0, max_value=float(_max), step=0.1, format="%.1f%%",
-                                        key=f"dt_slider_{g}",
-                                        on_change=on_change_slider,
-                                        args=(g,),
-                                        label_visibility="collapsed"
-                                    )
-                                with sc_lock:
-                                    st.checkbox("🔒", key=f"lock_dt_{g}", help="ล็อกเป้าหมายนี้ไม่ให้เปลี่ยนสัดส่วน")
+                                if _max <= 0.0:
+                                    st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
+                                    st.session_state[state_key][g] = 0.0
+                                else:
+                                    if st.session_state[state_key][g] > _max:
+                                        st.session_state[state_key][g] = _max
+                                    st.session_state[f"dt_slider_{g}"] = st.session_state[state_key][g]
+                                    
+                                    split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
+                                    cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
+                                    
+                                    st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                                    
+                                    sc_slider, sc_lock = st.columns([4.5, 1])
+                                    with sc_slider:
+                                        st.slider(
+                                            "hidden", 
+                                            min_value=0.0, max_value=float(_max), step=0.1, format="%.1f%%",
+                                            key=f"dt_slider_{g}",
+                                            on_change=on_change_slider,
+                                            args=(g,),
+                                            label_visibility="collapsed"
+                                        )
+                                    with sc_lock:
+                                        st.checkbox("🔒", key=f"lock_dt_{g}", help="ล็อกเป้าหมายนี้ไม่ให้เปลี่ยนสัดส่วน")
 
-                    alloc_pcts_dt = st.session_state[state_key]
-                    
-                    total_cap_sum = sum(caps_dt.values())
-                    if total_cap_sum < 99.9 and current_amt > 0:
-                        st.warning(f"⚠️ เงินที่คุณระบุมากเกินกว่าเป้าหมายที่เลือกไว้จะรับได้! (ใส่ได้สูงสุด {total_cap_sum:.1f}%) กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกด้านบนเพื่อรับยอดเงินที่ล้น")
-                else:
-                    st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
-                    
+                        alloc_pcts_dt = st.session_state[state_key]
+                        
+                        total_cap_sum = sum(caps_dt.values())
+                        if total_cap_sum < 99.9 and current_amt > 0:
+                            st.warning(f"⚠️ เงินที่คุณระบุมากเกินกว่าเป้าหมายที่เลือกไว้จะรับได้! (ใส่ได้สูงสุด {total_cap_sum:.1f}%) กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกด้านบนเพื่อรับยอดเงินที่ล้น")
+                    else:
+                        st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
+                        
             note = st.text_input("Note", placeholder="...", key="dt_note")
             
             if st.button("Save Transaction", use_container_width=True):
                 if amount is None or amount <= 0:
                     st.error("กรุณาระบุจำนวนเงินครับ")
                 else:
-                    if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งเปอร์เซ็นต์ (Split %)":
+                    if "เงินออม" in type_entry and dt_alloc_mode in ["🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)", "⌨️ กรอกสัดส่วนเอง (Manual %)"]:
                         if len(selected_goals_split_dt) == 0:
                             st.error("❌ กรุณาเลือกเป้าหมายที่จะแบ่งเงินครับ")
                             st.stop()
                         total_pct = sum(alloc_pcts_dt.values())
-                        total_cap_sum = sum(caps_dt.values())
                         
-                        if total_pct < 99.9:
-                            if total_cap_sum < 99.9:
-                                st.error("❌ เงินล้นเป้าหมาย! กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในตัวเลือกสล็อตเงินออม เพื่อให้เงินส่วนที่เหลือมีที่เก็บครับ")
-                                st.stop()
+                        # 🔥 ป้องกันจุดทศนิยมรวน 
+                        if abs(total_pct - 100.0) > 0.1:
+                            if dt_alloc_mode == "🎚️ แบ่งด้วยแถบเลื่อน (Auto Sliders)":
+                                total_cap_sum = sum(caps_dt.values())
+                                if total_cap_sum < 99.5:
+                                    st.error("❌ เงินล้นเป้าหมาย! (สไลเดอร์ตัน) กรุณาเพิ่ม '📦 คลังออมทั่วไป' ในช่องด้านบนเพื่อให้ระบบมีสล็อตเก็บเงินส่วนที่ล้นครับ")
+                                    st.stop()
+                                else:
+                                    st.error(f"❌ สัดส่วนรวมต้องเท่ากับ 100% (ตอนนี้รวมได้ {total_pct:.1f}%) กรุณาปลดล็อก 🔒 บางเป้าหมายเพื่อให้ระบบเกลี่ยเงินได้ครบครับ")
+                                    st.stop()
                             else:
-                                st.error(f"❌ สัดส่วนเปอร์เซ็นต์รวมต้องเท่ากับ 100% (ตอนนี้รวมได้ {total_pct:.1f}%)")
+                                st.error(f"❌ สัดส่วนเปอร์เซ็นต์รวมต้องเท่ากับ 100% (ตอนนี้คุณกรอกไป {total_pct:.1f}%)")
                                 st.stop()
                             
                     final_type = type_entry.split(" ")[1]
