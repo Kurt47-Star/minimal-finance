@@ -8,106 +8,76 @@ from google.oauth2.service_account import Credentials
 import json
 
 # ตั้งค่าหน้าจอเริ่มต้น
-st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
-#  CSS สไตล์ Apple Luxury (Minimalist, Glassmorphism, Rounded)
+#  CSS สไตล์ Apple Luxury แบบรองรับ Dark/Light Mode 100%
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap');
     
     html, body, [class*="css"] { 
         font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Prompt', sans-serif !important; 
-        color: #1d1d1f;
     }
     
-    /* พื้นหลังสไตล์ iOS / macOS */
-    .stApp { background-color: #f5f5f7; }
+    /* ให้พื้นหลังหลักของแอปดึงสีตาม Theme ของ Streamlit อัตโนมัติ (ไม่บังคับขาวแล้ว) */
+    .stApp { background-color: var(--background-color); }
     
-    /* ซ่อน Header และ Footer ของ Streamlit เพื่อความเนียนเป็นแอปเนทีฟ */
-    header { visibility: hidden; }
-    #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    
-    h1, h2, h3 { font-weight: 700; color: #1d1d1f; letter-spacing: -0.5px; }
+    h1, h2, h3 { font-weight: 700; color: var(--text-color); letter-spacing: -0.5px; }
     
     /* ปุ่มสไตล์แคปซูล (Pill Button) ของ Apple */
     .stButton>button { 
         border-radius: 98px; 
         font-weight: 600; 
         padding: 10px 24px; 
-        border: none;
-        background-color: #ffffff;
-        color: #1d1d1f;
+        border: 1px solid var(--border-color);
+        background-color: var(--secondary-background-color);
+        color: var(--text-color);
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
         transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     }
     .stButton>button:hover {
-        background-color: #f5f5f7;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+        border-color: #007aff;
+        box-shadow: 0 6px 20px rgba(0, 122, 255, 0.1);
         transform: scale(1.02);
     }
     
-    /* ปรับแต่งช่องกรอกข้อมูล (Inputs) ให้มนและดูนุ่มนวล */
+    /* ปรับแต่งช่องกรอกข้อมูล (Inputs) ให้มนและดูนุ่มนวล เข้ากับ Dark Mode */
     div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
         border-radius: 14px !important;
-        background-color: #ffffff !important;
-        border: 1px solid rgba(0,0,0,0.04) !important;
+        background-color: var(--secondary-background-color) !important;
+        border: 1px solid var(--border-color) !important;
         box-shadow: inset 0 1px 3px rgba(0,0,0,0.02) !important;
     }
     div[data-baseweb="input"] > div:focus-within, div[data-baseweb="select"] > div:focus-within {
-        border-color: #0071e3 !important;
-        box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.1) !important;
+        border-color: #007aff !important;
+        box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1) !important;
     }
     
-    .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #1d1d1f; opacity: 0.9; letter-spacing: -0.3px;}
+    .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: var(--text-color); opacity: 0.9; letter-spacing: -0.3px;}
     
-    /* การ์ดสไตล์ Apple (มุมมน 24px, เงาฟุ้งบางๆ) */
+    /* การ์ดสไตล์ Apple (มุมมน 24px, ดึงสีพื้นหลังจาก Theme) */
     .metric-card { 
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
+        background: var(--secondary-background-color);
         padding: 28px; 
         border-radius: 24px; 
         text-align: left; 
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.03); 
-        border: 1px solid rgba(0, 0, 0, 0.02);
+        border: 1px solid var(--border-color);
         margin-bottom: 1rem;
         transition: transform 0.3s ease;
     }
     .metric-card:hover { transform: translateY(-3px); }
-    .metric-title { font-size: 13px; font-weight: 600; color: #86868b; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px; }
-    .metric-value { color: #1d1d1f; font-size: 36px; font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -1px; }
-    .metric-currency { color: #86868b; font-size: 14px; font-weight: 500; margin-top: 6px; }
-    
-    /* Tabs สไตล์ Segmented Control ของ iOS */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: rgba(0,0,0,0.03);
-        padding: 6px;
-        border-radius: 16px;
-        border: none;
-    }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 12px !important;
-        padding: 8px 16px !important;
-        font-weight: 600 !important;
-        color: #86868b !important;
-        border: none !important;
-        background: transparent !important;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #ffffff !important;
-        color: #1d1d1f !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
-    }
+    .metric-title { font-size: 13px; font-weight: 600; opacity: 0.6; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px; color: var(--text-color); }
+    .metric-value { color: var(--text-color); font-size: 36px; font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -1px; }
+    .metric-currency { color: var(--text-color); font-size: 14px; font-weight: 500; margin-top: 6px; opacity: 0.6; }
     
     /* สไตล์กล่องข้อมูลทั่วไป (Info Box) */
     .apple-info-box {
-        background-color: #ffffff;
+        background-color: var(--secondary-background-color);
         padding: 16px 20px;
         border-radius: 16px;
         margin: 16px 0;
-        border: 1px solid rgba(0,0,0,0.04);
+        border: 1px solid var(--border-color);
         box-shadow: 0 2px 10px rgba(0,0,0,0.02);
     }
     
@@ -117,13 +87,11 @@ st.markdown("""
     [data-testid="stDataFrame"] {
         border-radius: 16px;
         overflow: hidden;
-        border: 1px solid rgba(0,0,0,0.04);
+        border: 1px solid var(--border-color);
         box-shadow: 0 4px 12px rgba(0,0,0,0.02);
     }
     </style>
 """, unsafe_allow_html=True)
-
-st.title("Minimal Finance")
 
 # 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย (UTC+7)
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
@@ -396,6 +364,7 @@ def calculate_savings_metrics(df_source):
 
 _, _, _, _, total_sav_now, outstanding_loan = calculate_savings_metrics(df)
 
+# 🔥 ฟังก์ชันหาลิมิตยอดเงิน (ฝากได้ไม่เกินเป้า / ถอนได้ไม่เกินที่มี)
 def get_goal_limit(goal_label, df_g, is_withdraw):
     raw_g = goal_label.split(" (")[0]
     if raw_g == "📦 คลังออมทั่วไป" or df_g.empty:
@@ -580,7 +549,7 @@ if app_mode == "📱 Mobile Mode":
             
             st.markdown(f"""
                 <div class='apple-info-box' style='background-color: rgba(0, 122, 255, 0.05); border-left: none;'>
-                    <p style='margin:0; font-size: 13px; opacity: 0.8; color: #1d1d1f;'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
+                    <p style='margin:0; font-size: 13px; opacity: 0.8; color: var(--text-color);'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
                     {"<p style='margin:0; font-size:13px; color:#ff3b30; margin-top:4px;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
                 </div>
             """, unsafe_allow_html=True)
@@ -634,7 +603,7 @@ if app_mode == "📱 Mobile Mode":
                 split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
                 cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
                 
-                st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; color:#86868b;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; opacity: 0.6;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
                 
                 if _max <= 0.0:
                     st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
@@ -796,7 +765,7 @@ else:
                 
                 st.markdown(f"""
                     <div class='apple-info-box' style='background-color: rgba(0, 122, 255, 0.05); border-left: none;'>
-                        <p style='margin:0; font-size: 13px; opacity: 0.8; color: #1d1d1f;'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
+                        <p style='margin:0; font-size: 13px; opacity: 0.8; color: var(--text-color);'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
                         {"<p style='margin:0; font-size:13px; color:#ff3b30; margin-top:4px;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
                     </div>
                 """, unsafe_allow_html=True)
@@ -855,7 +824,7 @@ else:
                             split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
                             cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
                             
-                            st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; color:#86868b;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                            st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; opacity: 0.6;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
                             
                             if _max <= 0.0:
                                 st.info(f"🎉 เป้าหมายเต็มแล้ว!")
@@ -1127,8 +1096,8 @@ else:
             for idx, w in enumerate(wallet_list):
                 c = card_colors[idx % len(card_colors)]
                 bal = wallet_balances[w]
-                cards_html += f"<div style='flex: 1; min-width: 170px; background-color: #ffffff; border: none; padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);'><span style='font-size: 13px; opacity: 0.8;'>{w}</span><h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
-            cards_html += f"<div style='flex: 1; min-width: 170px; background-color: #ffffff; border: none; padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);'><span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินทั้งหมด (Net Wealth)</span><h3 style='margin: 0; color: #1d1d1f;'>฿{net_wealth_total:,.2f}</h3></div>"
+                cards_html += f"<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02);'><span style='font-size: 13px; opacity: 0.7; color: var(--text-color);'>{w}</span><h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
+            cards_html += f"<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02);'><span style='font-size: 13px; opacity: 0.7; color: var(--text-color);'>💰 รวมเงินทั้งหมด (Net Wealth)</span><h3 style='margin: 0; color: var(--text-color);'>฿{net_wealth_total:,.2f}</h3></div>"
             st.markdown(f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>", unsafe_allow_html=True)
 
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
@@ -1278,7 +1247,7 @@ else:
                             ),
                             "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
                         },
-                        key="budget_editor_v12"
+                        key="budget_editor_v13"
                     )
                     if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
                         budget_sheet.clear()
@@ -1669,7 +1638,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v79"
+                key="editor_debt_v81"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1694,7 +1663,7 @@ else:
         g_m1.markdown(f"<div class='metric-card'><div class='metric-title'>💰 คลังเงินออมจริง (Savings Total)</div><div class='metric-value' style='color:#007aff;'>฿{total_sav_now:,.2f}</div></div>", unsafe_allow_html=True)
         g_m2.markdown(f"<div class='metric-card'><div class='metric-title'>📦 จัดสรรเข้าเป้าหมายแล้ว</div><div class='metric-value' style='color:#34c759;'>฿{total_allocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
         
-        rem_color = "#ff3b30" if remaining_unallocated_sav < 0 else "#1d1d1f"
+        rem_color = "#ff3b30" if remaining_unallocated_sav < 0 else "var(--text-color)"
         g_m3.markdown(f"<div class='metric-card'><div class='metric-title'>⚖️ เงินออมที่ยังไม่จัดสรร</div><div class='metric-value' style='color:{rem_color};'>฿{remaining_unallocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
         
         st.markdown("---")
@@ -1770,7 +1739,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v79"
+                key="editor_goals_v81"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1793,7 +1762,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v79"
+                key="editor_wallets_v81"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1815,7 +1784,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v79")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v81")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1825,7 +1794,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v79")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v81")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1884,7 +1853,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v79"
+                key="editor_finance_v81"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
