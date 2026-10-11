@@ -8,55 +8,122 @@ from google.oauth2.service_account import Credentials
 import json
 
 # ตั้งค่าหน้าจอเริ่มต้น
-st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="collapsed")
 
-# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode
+#  CSS สไตล์ Apple Luxury (Minimalist, Glassmorphism, Rounded)
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap');
     
     html, body, [class*="css"] { 
-        font-family: 'Poppins', 'Prompt', sans-serif !important; 
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Prompt', sans-serif !important; 
+        color: #1d1d1f;
     }
     
-    h1, h2, h3 { font-weight: 700; color: var(--text-color); }
+    /* พื้นหลังสไตล์ iOS / macOS */
+    .stApp { background-color: #f5f5f7; }
     
+    /* ซ่อน Header และ Footer ของ Streamlit เพื่อความเนียนเป็นแอปเนทีฟ */
+    header { visibility: hidden; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    
+    h1, h2, h3 { font-weight: 700; color: #1d1d1f; letter-spacing: -0.5px; }
+    
+    /* ปุ่มสไตล์แคปซูล (Pill Button) ของ Apple */
     .stButton>button { 
-        border-radius: 12px; 
-        font-weight: 500; 
-        padding: 10px; 
-        border: 1px solid var(--border-color);
-        background-color: var(--secondary-background-color);
-        color: var(--text-color);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        transition: all 0.3s ease;
+        border-radius: 98px; 
+        font-weight: 600; 
+        padding: 10px 24px; 
+        border: none;
+        background-color: #ffffff;
+        color: #1d1d1f;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     }
     .stButton>button:hover {
-        border-color: #f9744b;
-        color: #f9744b;
-        transform: translateY(-2px);
+        background-color: #f5f5f7;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+        transform: scale(1.02);
     }
     
-    .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text-color); opacity: 0.9; }
+    /* ปรับแต่งช่องกรอกข้อมูล (Inputs) ให้มนและดูนุ่มนวล */
+    div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
+        border-radius: 14px !important;
+        background-color: #ffffff !important;
+        border: 1px solid rgba(0,0,0,0.04) !important;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.02) !important;
+    }
+    div[data-baseweb="input"] > div:focus-within, div[data-baseweb="select"] > div:focus-within {
+        border-color: #0071e3 !important;
+        box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.1) !important;
+    }
     
+    .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #1d1d1f; opacity: 0.9; letter-spacing: -0.3px;}
+    
+    /* การ์ดสไตล์ Apple (มุมมน 24px, เงาฟุ้งบางๆ) */
     .metric-card { 
-        background-color: var(--secondary-background-color); 
-        padding: 24px; 
-        border-radius: 20px; 
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        padding: 28px; 
+        border-radius: 24px; 
         text-align: left; 
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04); 
-        border: 1px solid var(--border-color);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.03); 
+        border: 1px solid rgba(0, 0, 0, 0.02);
         margin-bottom: 1rem;
+        transition: transform 0.3s ease;
     }
-    .metric-title { font-size: 15px; font-weight: 500; opacity: 0.7; margin-bottom: 5px; color: var(--text-color); }
-    .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
-    .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
+    .metric-card:hover { transform: translateY(-3px); }
+    .metric-title { font-size: 13px; font-weight: 600; color: #86868b; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px; }
+    .metric-value { color: #1d1d1f; font-size: 36px; font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -1px; }
+    .metric-currency { color: #86868b; font-size: 14px; font-weight: 500; margin-top: 6px; }
+    
+    /* Tabs สไตล์ Segmented Control ของ iOS */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: rgba(0,0,0,0.03);
+        padding: 6px;
+        border-radius: 16px;
+        border: none;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 12px !important;
+        padding: 8px 16px !important;
+        font-weight: 600 !important;
+        color: #86868b !important;
+        border: none !important;
+        background: transparent !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #ffffff !important;
+        color: #1d1d1f !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
+    }
+    
+    /* สไตล์กล่องข้อมูลทั่วไป (Info Box) */
+    .apple-info-box {
+        background-color: #ffffff;
+        padding: 16px 20px;
+        border-radius: 16px;
+        margin: 16px 0;
+        border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+    }
     
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    
+    /* ปรับขอบโค้งของตาราง */
+    [data-testid="stDataFrame"] {
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+    }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("Minimal Finance Pro")
+st.title("Minimal Finance")
 
 # 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย (UTC+7)
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
@@ -107,6 +174,24 @@ def get_google_sheets():
 
     try:
         sheet_cycle = sh.worksheet("Cycles")
+        try:
+            records_c = sheet_cycle.get_all_values()
+            has_sept = any("September" in str(r[0]) for r in records_c if len(r) > 0)
+            
+            for idx, r in enumerate(records_c):
+                if len(r) > 0 and "July 2026" in str(r[0]):
+                    sheet_cycle.update_cell(idx + 1, 2, "2026-06-25 00:00:00")
+                    sheet_cycle.update_cell(idx + 1, 3, "2026-07-31 23:59:59")
+                    sheet_cycle.update_cell(idx + 1, 4, "CLOSED")
+                elif len(r) > 0 and "August 2026" in str(r[0]):
+                    sheet_cycle.update_cell(idx + 1, 2, "2026-08-01 23:18:00")
+                    sheet_cycle.update_cell(idx + 1, 3, "2026-08-29 20:18:26")
+                    sheet_cycle.update_cell(idx + 1, 4, "CLOSED")
+            
+            if not has_sept:
+                sheet_cycle.append_row(["September 2026", "2026-08-29 20:18:27", "", "ACTIVE", 0.0, 0.0])
+        except Exception:
+            pass
     except:
         sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
@@ -311,7 +396,6 @@ def calculate_savings_metrics(df_source):
 
 _, _, _, _, total_sav_now, outstanding_loan = calculate_savings_metrics(df)
 
-# 🔥 ฟังก์ชันหาลิมิตยอดเงิน (ฝากได้ไม่เกินเป้า / ถอนได้ไม่เกินที่มี)
 def get_goal_limit(goal_label, df_g, is_withdraw):
     raw_g = goal_label.split(" (")[0]
     if raw_g == "📦 คลังออมทั่วไป" or df_g.empty:
@@ -354,8 +438,9 @@ def get_dynamic_goal_options(is_withdraw=False):
 
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
-HONEY_POT_MAP = {"รายรับ": "#2a9d8f", "รายจ่าย": "#f9744b", "เงินออม": "#457b9d", "เงินลงทุน": "#e9c46a", "เงินสุทธิ": "#8ab17d"}
-SUB_CAT_PALETTE = ["#124d54", "#f9744b", "#e9c46a", "#2a9d8f", "#457b9d", "#f4a261", "#8ab17d", "#e76f51", "#d62828", "#003049", "#fcbf49"]
+# 🎨 Apple-like subtle colors
+HONEY_POT_MAP = {"รายรับ": "#34c759", "รายจ่าย": "#ff3b30", "เงินออม": "#007aff", "เงินลงทุน": "#ff9500", "เงินสุทธิ": "#5856d6"}
+SUB_CAT_PALETTE = ["#007aff", "#34c759", "#ff9500", "#5856d6", "#ff2d55", "#af52de", "#ff3b30", "#30b0c7", "#8e8e93", "#c7c7cc"]
 
 # 🔥 อัลกอริทึม Hybrid Sync: สไลเดอร์ + ช่องกรอกตัวเลข
 def setup_balance_logic(mode, selected_goals, caps):
@@ -372,7 +457,6 @@ def setup_balance_logic(mode, selected_goals, caps):
             st.session_state[state_key] = {}
             
     def on_change_widget(changed_goal, source_widget):
-        # source_widget เป็นได้ทั้ง 'num' หรือ 'sld'
         widget_key = f"{mode}_{source_widget}_{changed_goal}"
         new_val = st.session_state[widget_key]
         old_val = st.session_state[state_key][changed_goal]
@@ -495,9 +579,9 @@ if app_mode == "📱 Mobile Mode":
                 selected_goals_split_mb = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", dynamic_options_mb, default=dynamic_options_mb[:2] if len(dynamic_options_mb)>=2 else dynamic_options_mb, key="mb_goals_split", label_visibility="collapsed")
             
             st.markdown(f"""
-                <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px;'>
-                    <p style='margin:0; font-size: 13px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
-                    {"<p style='margin:0; font-size:13px; color:#f9744b;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
+                <div class='apple-info-box' style='background-color: rgba(0, 122, 255, 0.05); border-left: none;'>
+                    <p style='margin:0; font-size: 13px; opacity: 0.8; color: #1d1d1f;'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
+                    {"<p style='margin:0; font-size:13px; color:#ff3b30; margin-top:4px;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
                 </div>
             """, unsafe_allow_html=True)
             main_cat = "บริหารเงินออม"
@@ -526,7 +610,7 @@ if app_mode == "📱 Mobile Mode":
     alloc_pcts_mb = {}
     if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งหลายเป้าหมาย (Split)":
         if len(selected_goals_split_mb) > 0:
-            st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
+            st.markdown("<p style='font-size:14px; font-weight:600; color:#007aff; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
             
             current_amt = amount if amount else 0.0
             
@@ -550,7 +634,7 @@ if app_mode == "📱 Mobile Mode":
                 split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
                 cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
                 
-                st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; color:#86868b;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
                 
                 if _max <= 0.0:
                     st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
@@ -711,9 +795,9 @@ else:
                     selected_goals_split_dt = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", dynamic_options_dt, default=dynamic_options_dt[:2] if len(dynamic_options_dt)>=2 else dynamic_options_dt, key="dt_goals_split", label_visibility="collapsed")
                 
                 st.markdown(f"""
-                    <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0;'>
-                        <p style='margin:0; font-size: 14px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
-                        {"<p style='margin:0; color: #f9744b; font-size: 14px; font-weight:600;'>⚠️ ยอดหนี้ค้างคืนคลัง: ฿" + f"{outstanding_loan:,.2f}</p>" if outstanding_loan > 0 else ""}
+                    <div class='apple-info-box' style='background-color: rgba(0, 122, 255, 0.05); border-left: none;'>
+                        <p style='margin:0; font-size: 13px; opacity: 0.8; color: #1d1d1f;'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
+                        {"<p style='margin:0; font-size:13px; color:#ff3b30; margin-top:4px;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
                     </div>
                 """, unsafe_allow_html=True)
                 main_cat = "บริหารเงินออม"
@@ -745,7 +829,7 @@ else:
             alloc_pcts_dt = {}
             if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งหลายเป้าหมาย (Split)":
                 if len(selected_goals_split_dt) > 0:
-                    st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
+                    st.markdown("<p style='font-size:14px; font-weight:600; color:#007aff; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
                     
                     current_amt = amount if amount else 0.0
                     
@@ -771,7 +855,7 @@ else:
                             split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
                             cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
                             
-                            st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                            st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; color:#86868b;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
                             
                             if _max <= 0.0:
                                 st.info(f"🎉 เป้าหมายเต็มแล้ว!")
@@ -1038,13 +1122,13 @@ else:
             net_wealth_total = sum(wallet_balances.values())
 
             # --- 💳 แสดงการ์ดธนาคาร ---
-            card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
+            card_colors = ["#34c759", "#ff9500", "#007aff", "#5856d6", "#ff2d55", "#af52de", "#ff3b30"]
             cards_html = ""
             for idx, w in enumerate(wallet_list):
                 c = card_colors[idx % len(card_colors)]
                 bal = wallet_balances[w]
-                cards_html += f"<div style='flex: 1; min-width: 170px; background-color: {c}18; border: 1px solid {c}; padding: 12px 18px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.8;'>{w}</span><h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
-            cards_html += f"<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินทั้งหมด (Net Wealth)</span><h3 style='margin: 0;'>฿{net_wealth_total:,.2f}</h3></div>"
+                cards_html += f"<div style='flex: 1; min-width: 170px; background-color: #ffffff; border: none; padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);'><span style='font-size: 13px; opacity: 0.8;'>{w}</span><h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
+            cards_html += f"<div style='flex: 1; min-width: 170px; background-color: #ffffff; border: none; padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);'><span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินทั้งหมด (Net Wealth)</span><h3 style='margin: 0; color: #1d1d1f;'>฿{net_wealth_total:,.2f}</h3></div>"
             st.markdown(f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>", unsafe_allow_html=True)
 
             primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
@@ -1091,12 +1175,12 @@ else:
             m1, m2, m3, m4, m5 = st.columns(5)
             net_title_class = "metric-title" if net_wealth_total >= 0 else "metric-title-alert"
             m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Wealth (รวมทั้งหมด)</div><div class='metric-value'>฿{net_wealth_total:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income (รอบนี้) <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#f9744b;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income (รอบนี้) <span style='color:#34c759;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#ff3b30;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
-            loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หหนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
-            m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav_flow:,.0f}</div><div style='font-size:11px;color:#457b9d;font-weight:600;margin-top:2px;'>🏦 คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>", unsafe_allow_html=True)
-            m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            loan_badge = f"<div style='font-size:11px;color:#ff3b30;font-weight:600;margin-top:2px;'>⚠️ หนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
+            m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#007aff;'>↗</span></div><div class='metric-value'>฿{sav_flow:,.0f}</div><div style='font-size:11px;color:#007aff;font-weight:600;margin-top:2px;'>🏦 คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>", unsafe_allow_html=True)
+            m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#ff9500;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
             
             st.markdown("---")
             
@@ -1136,7 +1220,7 @@ else:
                 with c_cy_chart:
                     df_melt = df_cycle_sum.melt(id_vars="รอบบัญชี (Cycle)", var_name="ประเภท", value_name="จำนวนเงิน")
                     fig_cy = px.bar(df_melt, x="รอบบัญชี (Cycle)", y="จำนวนเงิน", color="ประเภท", barmode="group",
-                                    color_discrete_map={"🐷 เงินออม (Savings)": "#457b9d", "📈 เงินลงทุน (Investments)": "#e9c46a"}, text="จำนวนเงิน")
+                                    color_discrete_map={"🐷 เงินออม (Savings)": "#007aff", "📈 เงินลงทุน (Investments)": "#ff9500"}, text="จำนวนเงิน")
                     fig_cy.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
                     fig_cy.update_layout(
                         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
@@ -1231,16 +1315,16 @@ else:
                             pct = (spent_amt / budget_amt) * 100 if budget_amt > 0 else 100
                             
                             if pct < 60: 
-                                color, emo, msg = "#2a9d8f", "🟢", "ดีมาก! คุณยังเหลือโควต้าอีกเยอะ ใช้จ่ายได้สบายๆ"
+                                color, emo, msg = "#34c759", "🟢", "ดีมาก! คุณยังเหลือโควต้าอีกเยอะ ใช้จ่ายได้สบายๆ"
                             elif pct < 85: 
-                                color, emo, msg = "#e9c46a", "🟡", "เริ่มตึงมือแล้วนะ! ควรระมัดระวังการใช้จ่ายในหมวดหมู่นี้"
+                                color, emo, msg = "#ffcc00", "🟡", "เริ่มตึงมือแล้วนะ! ควรระมัดระวังการใช้จ่ายในหมวดหมู่นี้"
                             elif pct <= 100: 
-                                color, emo, msg = "#f9744b", "🟠", "อันตราย! งบหมวดนี้ใกล้จะทะลุแล้ว เลี่ยงการซื้อของที่ไม่จำเป็นด่วน"
+                                color, emo, msg = "#ff9500", "🟠", "อันตราย! งบหมวดนี้ใกล้จะทะลุแล้ว เลี่ยงการซื้อของที่ไม่จำเป็นด่วน"
                             else: 
-                                color, emo, msg = "#d62828", "🔴", "ทะลุงบ! คุณใช้เงินเกินโควต้าที่ตั้งไว้แล้ว ควรประหยัดงบส่วนอื่นมาชดเชย"
+                                color, emo, msg = "#ff3b30", "🔴", "ทะลุงบ! คุณใช้เงินเกินโควต้าที่ตั้งไว้แล้ว ควรประหยัดงบส่วนอื่นมาชดเชย"
 
                             st.markdown(f"""
-                            <div style='background-color: var(--secondary-background-color); border: 1px solid {color}50; border-left: 5px solid {color}; padding: 15px; border-radius: 10px; margin-bottom: 12px;'>
+                            <div class='apple-info-box' style='border-left: 5px solid {color};'>
                                 <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;'>
                                     <span style='font-size: 16px; font-weight: 600;'>{emo} {cat}</span>
                                     <span style='font-size: 14px; font-weight: 600; color: {color};'>{pct:.1f}%</span>
@@ -1525,8 +1609,8 @@ else:
         total_paid = pd.to_numeric(paid_df['จำนวนเงิน'], errors='coerce').sum() if not paid_df.empty else 0.0
         
         m_d1, m_d2 = st.columns(2)
-        m_d1.markdown(f"<div class='metric-card'><div class='metric-title'>⏳ ยอดเงินที่คนอื่นยังติดอยู่ (รอคืน)</div><div class='metric-value' style='color:#f9744b;'>฿{total_pending:,.2f}</div></div>", unsafe_allow_html=True)
-        m_d2.markdown(f"<div class='metric-card'><div class='metric-title'>✅ ได้รับคืนมาแล้วทั้งหมด</div><div class='metric-value' style='color:#2a9d8f;'>฿{total_paid:,.2f}</div></div>", unsafe_allow_html=True)
+        m_d1.markdown(f"<div class='metric-card'><div class='metric-title'>⏳ ยอดเงินที่คนอื่นยังติดอยู่ (รอคืน)</div><div class='metric-value' style='color:#ff3b30;'>฿{total_pending:,.2f}</div></div>", unsafe_allow_html=True)
+        m_d2.markdown(f"<div class='metric-card'><div class='metric-title'>✅ ได้รับคืนมาแล้วทั้งหมด</div><div class='metric-value' style='color:#34c759;'>฿{total_paid:,.2f}</div></div>", unsafe_allow_html=True)
         
         st.markdown("---")
         
@@ -1607,10 +1691,10 @@ else:
         remaining_unallocated_sav = total_sav_now - total_allocated_sav
 
         g_m1, g_m2, g_m3 = st.columns(3)
-        g_m1.markdown(f"<div class='metric-card'><div class='metric-title'>💰 คลังเงินออมจริง (Savings Total)</div><div class='metric-value' style='color:#457b9d;'>฿{total_sav_now:,.2f}</div></div>", unsafe_allow_html=True)
-        g_m2.markdown(f"<div class='metric-card'><div class='metric-title'>📦 จัดสรรเข้าเป้าหมายแล้ว</div><div class='metric-value' style='color:#2a9d8f;'>฿{total_allocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
+        g_m1.markdown(f"<div class='metric-card'><div class='metric-title'>💰 คลังเงินออมจริง (Savings Total)</div><div class='metric-value' style='color:#007aff;'>฿{total_sav_now:,.2f}</div></div>", unsafe_allow_html=True)
+        g_m2.markdown(f"<div class='metric-card'><div class='metric-title'>📦 จัดสรรเข้าเป้าหมายแล้ว</div><div class='metric-value' style='color:#34c759;'>฿{total_allocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
         
-        rem_color = "#f9744b" if remaining_unallocated_sav < 0 else "#8ab17d"
+        rem_color = "#ff3b30" if remaining_unallocated_sav < 0 else "#1d1d1f"
         g_m3.markdown(f"<div class='metric-card'><div class='metric-title'>⚖️ เงินออมที่ยังไม่จัดสรร</div><div class='metric-value' style='color:{rem_color};'>฿{remaining_unallocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
         
         st.markdown("---")
@@ -1639,11 +1723,11 @@ else:
                 pct = min(g_saved / g_target, 1.0)
                 pct_display = (g_saved / g_target) * 100
                 
-                if "ด่วนที่สุด" in g_pri: pri_color = "#d62828"
-                elif "สูง" in g_pri: pri_color = "#f9744b"
-                elif "ปานกลาง" in g_pri: pri_color = "#e9c46a"
-                elif "ต่ำ" in g_pri: pri_color = "#2a9d8f"
-                else: pri_color = "#457b9d"
+                if "ด่วนที่สุด" in g_pri: pri_color = "#ff2d55"
+                elif "สูง" in g_pri: pri_color = "#ff9500"
+                elif "ปานกลาง" in g_pri: pri_color = "#007aff"
+                elif "ต่ำ" in g_pri: pri_color = "#34c759"
+                else: pri_color = "#8e8e93"
                 
                 st.markdown(f"**{title_text}** <span style='font-size:12px; background-color:{pri_color}20; color:{pri_color}; padding:3px 10px; border-radius:12px; margin-left:10px; font-weight:600;'>{g_pri}</span><br><span style='font-size:14px;'>`฿{g_saved:,.2f} / ฿{g_target:,.2f} ({pct_display:.1f}%)`</span>", unsafe_allow_html=True)
                 st.progress(pct)
@@ -1865,10 +1949,10 @@ else:
         st.markdown("---")
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.markdown(f"<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน (EMI)</div><div class='metric-value' style='color:#f9744b;'>฿{emi_amount:,.2f}</div></div>", unsafe_allow_html=True)
+        m1.markdown(f"<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน (EMI)</div><div class='metric-value' style='color:#ff3b30;'>฿{emi_amount:,.2f}</div></div>", unsafe_allow_html=True)
         m2.markdown(f"<div class='metric-card'><div class='metric-title'>เงินต้นคงค้างระบบ</div><div class='metric-value'>฿{db_principal:,.0f}</div></div>", unsafe_allow_html=True)
-        m3.markdown(f"<div class='metric-card'><div class='metric-title'>ดอกเบี้ยทั้งสัญญา</div><div class='metric-value' style='color:#e9c46a;'>฿{total_interest:,.2f}</div></div>", unsafe_allow_html=True)
-        m4.markdown(f"<div class='metric-card'><div class='metric-title'>รวมชำระตลอดสัญญา</div><div class='metric-value' style='color:#f9744b;'>฿{total_payment:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='metric-card'><div class='metric-title'>ดอกเบี้ยทั้งสัญญา</div><div class='metric-value' style='color:#ff9500;'>฿{total_interest:,.2f}</div></div>", unsafe_allow_html=True)
+        m4.markdown(f"<div class='metric-card'><div class='metric-title'>รวมชำระตลอดสัญญา</div><div class='metric-value' style='color:#ff3b30;'>฿{total_payment:,.2f}</div></div>", unsafe_allow_html=True)
 
         st.markdown("<p class='quick-add-text'>🔄 ชำระค่างวดประจำเดือน</p>", unsafe_allow_html=True)
 
@@ -1917,7 +2001,7 @@ else:
 
             def highlight_paid(row):
                 if row.name < current_month_paid:
-                    return ['background-color: rgba(42, 157, 143, 0.1); color: #2a9d8f; font-weight: bold'] * len(row)
+                    return ['background-color: rgba(52, 199, 89, 0.1); color: #34c759; font-weight: bold'] * len(row)
                 return [''] * len(row)
 
             st.dataframe(df_display.style.apply(highlight_paid, axis=1), use_container_width=True, hide_index=True)
