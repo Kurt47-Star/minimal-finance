@@ -9,9 +9,7 @@ import json
 
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
-if st.sidebar.button("🔄 ดึงข้อมูลสด (Clear Cache)", use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
+
 # 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode
 st.markdown("""
     <style>
@@ -473,6 +471,9 @@ def setup_balance_logic(mode, selected_goals, caps):
 
 # --- แถบเมนูด้านข้างสลับโหมด ---
 st.sidebar.markdown("## ⚙️ Settings")
+if st.sidebar.button("🔄 ดึงข้อมูลสด (Clear Cache)", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
 app_mode = st.sidebar.radio("Layout Mode:", ["📱 Mobile Mode", "💻 Desktop Mode"])
 st.sidebar.markdown("---")
 
