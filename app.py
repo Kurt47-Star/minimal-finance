@@ -10,88 +10,68 @@ import json
 # ตั้งค่าหน้าจอเริ่มต้น
 st.set_page_config(page_title="Minimal Finance Pro", layout="wide", initial_sidebar_state="expanded")
 
-#  CSS สไตล์ Apple Luxury แบบรองรับ Dark/Light Mode 100%
+# 🔤 CSS สไตล์ Soft UI ที่รองรับทั้ง Light & Dark Mode
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap');
     
     html, body, [class*="css"] { 
-        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Prompt', sans-serif !important; 
+        font-family: 'Poppins', 'Prompt', sans-serif !important; 
     }
     
-    /* ให้พื้นหลังหลักของแอปดึงสีตาม Theme ของ Streamlit อัตโนมัติ (ไม่บังคับขาวแล้ว) */
-    .stApp { background-color: var(--background-color); }
+    h1, h2, h3 { font-weight: 700; color: var(--text-color); }
     
-    h1, h2, h3 { font-weight: 700; color: var(--text-color); letter-spacing: -0.5px; }
-    
-    /* ปุ่มสไตล์แคปซูล (Pill Button) ของ Apple */
     .stButton>button { 
-        border-radius: 98px; 
-        font-weight: 600; 
-        padding: 10px 24px; 
+        border-radius: 12px; 
+        font-weight: 500; 
+        padding: 10px; 
         border: 1px solid var(--border-color);
         background-color: var(--secondary-background-color);
         color: var(--text-color);
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
-        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
     }
     .stButton>button:hover {
-        border-color: #007aff;
-        box-shadow: 0 6px 20px rgba(0, 122, 255, 0.1);
-        transform: scale(1.02);
+        border-color: #f9744b;
+        color: #f9744b;
+        transform: translateY(-2px);
     }
     
-    /* ปรับแต่งช่องกรอกข้อมูล (Inputs) ให้มนและดูนุ่มนวล เข้ากับ Dark Mode */
-    div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
-        border-radius: 14px !important;
-        background-color: var(--secondary-background-color) !important;
-        border: 1px solid var(--border-color) !important;
-        box-shadow: inset 0 1px 3px rgba(0,0,0,0.02) !important;
-    }
-    div[data-baseweb="input"] > div:focus-within, div[data-baseweb="select"] > div:focus-within {
-        border-color: #007aff !important;
-        box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1) !important;
-    }
+    .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text-color); opacity: 0.9; }
     
-    .quick-add-text { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: var(--text-color); opacity: 0.9; letter-spacing: -0.3px;}
-    
-    /* การ์ดสไตล์ Apple (มุมมน 24px, ดึงสีพื้นหลังจาก Theme) */
     .metric-card { 
-        background: var(--secondary-background-color);
-        padding: 28px; 
-        border-radius: 24px; 
+        background-color: var(--secondary-background-color); 
+        padding: 24px; 
+        border-radius: 20px; 
         text-align: left; 
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.03); 
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04); 
         border: 1px solid var(--border-color);
         margin-bottom: 1rem;
-        transition: transform 0.3s ease;
     }
-    .metric-card:hover { transform: translateY(-3px); }
-    .metric-title { font-size: 13px; font-weight: 600; opacity: 0.6; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px; color: var(--text-color); }
-    .metric-value { color: var(--text-color); font-size: 36px; font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -1px; }
-    .metric-currency { color: var(--text-color); font-size: 14px; font-weight: 500; margin-top: 6px; opacity: 0.6; }
+    .metric-title { font-size: 15px; font-weight: 500; opacity: 0.7; margin-bottom: 5px; color: var(--text-color); }
+    .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
+    .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
-    /* สไตล์กล่องข้อมูลทั่วไป (Info Box) */
-    .apple-info-box {
-        background-color: var(--secondary-background-color);
-        padding: 16px 20px;
+    .calib-box-match {
+        background-color: rgba(42, 157, 143, 0.12);
+        border: 1px solid #2a9d8f;
         border-radius: 16px;
-        margin: 16px 0;
-        border: 1px solid var(--border-color);
-        box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+        padding: 16px 20px;
+        margin-bottom: 16px;
+    }
+    .calib-box-diff {
+        background-color: rgba(249, 116, 75, 0.12);
+        border: 1px solid #f9744b;
+        border-radius: 16px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
     }
     
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    
-    /* ปรับขอบโค้งของตาราง */
-    [data-testid="stDataFrame"] {
-        border-radius: 16px;
-        overflow: hidden;
-        border: 1px solid var(--border-color);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.02);
-    }
     </style>
 """, unsafe_allow_html=True)
+
+st.title("Minimal Finance Pro")
 
 # 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย (UTC+7)
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
@@ -364,7 +344,6 @@ def calculate_savings_metrics(df_source):
 
 _, _, _, _, total_sav_now, outstanding_loan = calculate_savings_metrics(df)
 
-# 🔥 ฟังก์ชันหาลิมิตยอดเงิน (ฝากได้ไม่เกินเป้า / ถอนได้ไม่เกินที่มี)
 def get_goal_limit(goal_label, df_g, is_withdraw):
     raw_g = goal_label.split(" (")[0]
     if raw_g == "📦 คลังออมทั่วไป" or df_g.empty:
@@ -407,9 +386,8 @@ def get_dynamic_goal_options(is_withdraw=False):
 
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else [])
 
-# 🎨 Apple-like subtle colors
-HONEY_POT_MAP = {"รายรับ": "#34c759", "รายจ่าย": "#ff3b30", "เงินออม": "#007aff", "เงินลงทุน": "#ff9500", "เงินสุทธิ": "#5856d6"}
-SUB_CAT_PALETTE = ["#007aff", "#34c759", "#ff9500", "#5856d6", "#ff2d55", "#af52de", "#ff3b30", "#30b0c7", "#8e8e93", "#c7c7cc"]
+HONEY_POT_MAP = {"รายรับ": "#2a9d8f", "รายจ่าย": "#f9744b", "เงินออม": "#457b9d", "เงินลงทุน": "#e9c46a", "เงินสุทธิ": "#8ab17d"}
+SUB_CAT_PALETTE = ["#124d54", "#f9744b", "#e9c46a", "#2a9d8f", "#457b9d", "#f4a261", "#8ab17d", "#e76f51", "#d62828", "#003049", "#fcbf49"]
 
 # 🔥 อัลกอริทึม Hybrid Sync: สไลเดอร์ + ช่องกรอกตัวเลข
 def setup_balance_logic(mode, selected_goals, caps):
@@ -548,9 +526,9 @@ if app_mode == "📱 Mobile Mode":
                 selected_goals_split_mb = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", dynamic_options_mb, default=dynamic_options_mb[:2] if len(dynamic_options_mb)>=2 else dynamic_options_mb, key="mb_goals_split", label_visibility="collapsed")
             
             st.markdown(f"""
-                <div class='apple-info-box' style='background-color: rgba(0, 122, 255, 0.05); border-left: none;'>
-                    <p style='margin:0; font-size: 13px; opacity: 0.8; color: var(--text-color);'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
-                    {"<p style='margin:0; font-size:13px; color:#ff3b30; margin-top:4px;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
+                <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px;'>
+                    <p style='margin:0; font-size: 13px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
+                    {"<p style='margin:0; font-size:13px; color:#f9744b;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
                 </div>
             """, unsafe_allow_html=True)
             main_cat = "บริหารเงินออม"
@@ -579,7 +557,7 @@ if app_mode == "📱 Mobile Mode":
     alloc_pcts_mb = {}
     if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งหลายเป้าหมาย (Split)":
         if len(selected_goals_split_mb) > 0:
-            st.markdown("<p style='font-size:14px; font-weight:600; color:#007aff; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
+            st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
             
             current_amt = amount if amount else 0.0
             
@@ -603,7 +581,7 @@ if app_mode == "📱 Mobile Mode":
                 split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
                 cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
                 
-                st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; opacity: 0.6;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
                 
                 if _max <= 0.0:
                     st.info(f"🎉 เป้าหมาย {raw_g_key} เต็มแล้ว!")
@@ -764,9 +742,9 @@ else:
                     selected_goals_split_dt = st.multiselect("สล็อตเงินออม (เลือกได้หลายอัน):", dynamic_options_dt, default=dynamic_options_dt[:2] if len(dynamic_options_dt)>=2 else dynamic_options_dt, key="dt_goals_split", label_visibility="collapsed")
                 
                 st.markdown(f"""
-                    <div class='apple-info-box' style='background-color: rgba(0, 122, 255, 0.05); border-left: none;'>
-                        <p style='margin:0; font-size: 13px; opacity: 0.8; color: var(--text-color);'>💰 คลังเงินออมปัจจุบัน: <b style='color: #007aff;'>฿{total_sav_now:,.2f}</b></p>
-                        {"<p style='margin:0; font-size:13px; color:#ff3b30; margin-top:4px;'>⚠️ ยอดหนี้ค้างคืนคลัง: <b>฿" + f"{outstanding_loan:,.2f}</b></p>" if outstanding_loan > 0 else ""}
+                    <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0;'>
+                        <p style='margin:0; font-size: 14px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
+                        {"<p style='margin:0; color: #f9744b; font-size: 14px; font-weight:600;'>⚠️ ยอดหนี้ค้างคืนคลัง: ฿" + f"{outstanding_loan:,.2f}</p>" if outstanding_loan > 0 else ""}
                     </div>
                 """, unsafe_allow_html=True)
                 main_cat = "บริหารเงินออม"
@@ -798,7 +776,7 @@ else:
             alloc_pcts_dt = {}
             if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งหลายเป้าหมาย (Split)":
                 if len(selected_goals_split_dt) > 0:
-                    st.markdown("<p style='font-size:14px; font-weight:600; color:#007aff; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
+                    st.markdown("<p style='font-size:14px; font-weight:600; color:#2a9d8f; margin-bottom:5px;'>📊 ระบุสัดส่วน % (พิมพ์ตัวเลข หรือ เลื่อนปรับอัตโนมัติ)</p>", unsafe_allow_html=True)
                     
                     current_amt = amount if amount else 0.0
                     
@@ -824,7 +802,7 @@ else:
                             split_thb = current_amt * (st.session_state[state_key][g] / 100.0)
                             cap_text = f" / สูงสุด {_max:.1f}%" if _max < 100.0 else ""
                             
-                            st.markdown(f"<span style='font-size:14px; font-weight:600;'>{raw_g_key}</span> <span style='font-size:13px; opacity: 0.6;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
+                            st.markdown(f"<span style='font-size:14px; font-weight:500;'>{raw_g_key}</span> <span style='font-size:13px; color:#2a9d8f;'> (฿{split_thb:,.0f}{cap_text})</span>", unsafe_allow_html=True)
                             
                             if _max <= 0.0:
                                 st.info(f"🎉 เป้าหมายเต็มแล้ว!")
@@ -927,639 +905,623 @@ else:
     # 📊 Tab 2: Dashboard
     # ==========================================
     with tab2:
-        if not df.empty:
-            has_mom_7500 = False
-            for _, r_check in df.iterrows():
-                if "7500" in str(r_check['จำนวนเงิน']) and ("06-25" in str(r_check['วันที่']) or "6-25" in str(r_check['วันที่'])):
-                    has_mom_7500 = True
+        df_chart = df.copy()
+        
+        cycles_data = fetch_cycles()
+        df_cycles = pd.DataFrame(cycles_data) if cycles_data else pd.DataFrame(columns=["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
+        
+        cycle_options = []
+        active_cycle_name = "รอบปัจจุบัน"
+        active_row_idx = None
+        active_carry_forward = 0.0
+        
+        for idx, row in df_cycles.iterrows():
+            c_name = str(row['ชื่อรอบบัญชี']).strip()
+            c_status = str(row['สถานะ']).strip()
+            c_start = str(row['เริ่มต้น']).strip()
+            c_end = str(row['สิ้นสุด']).strip()
+            c_carry = float(row.get('ยอดยกมา', 0.0)) if pd.notnull(row.get('ยอดยกมา')) and str(row.get('ยอดยกมา')).strip() != "" else 0.0
+            c_kt_real = float(row.get('เงินจริงกรุงไทย', 0.0)) if pd.notnull(row.get('เงินจริงกรุงไทย')) and str(row.get('เงินจริงกรุงไทย')).strip() != "" else 0.0
+            
+            if c_status == "ACTIVE":
+                active_cycle_name = c_name
+                active_row_idx = idx + 2
+                active_carry_forward = c_carry
+                cycle_options.append((f"🟢 {c_name} (เริ่ม {c_start[:10]})", c_start, None, c_carry, c_kt_real, idx + 2))
+            else:
+                cycle_options.append((f"📅 {c_name} ({c_start[:10]} - {c_end[:10]})", c_start, c_end, c_carry, c_kt_real, idx + 2))
+        
+        cycle_options.reverse()
+        cycle_labels = [opt[0] for opt in cycle_options] + ["🌟 แสดงข้อมูลทั้งหมด (All Time)"]
+        
+        col_dash_title, col_cycle_select = st.columns([1, 2])
+        with col_dash_title:
+            st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Overview (รอบบัญชี)</p>", unsafe_allow_html=True)
+        with col_cycle_select:
+            selected_cycle_label = st.selectbox("⏳ เลือก Circle ในการแสดงผล:", cycle_labels, index=0, label_visibility="collapsed")
+        
+        df_cycle = df_chart.copy()
+        df_cumulative = df_chart.copy()
+        selected_carry = 0.0
+        selected_kt_real = 0.0
+        selected_row_idx = None
+        
+        if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
+            for label, start_str, end_str, carry_val, kt_val, r_idx in cycle_options:
+                if label == selected_cycle_label:
+                    selected_carry = carry_val
+                    selected_kt_real = kt_val
+                    selected_row_idx = r_idx
+                    start_dt = parse_clean_datetime(pd.Series([start_str])).iloc[0]
+                    if end_str and pd.notnull(end_str) and str(end_str).strip() != "":
+                        end_dt = parse_clean_datetime(pd.Series([end_str])).iloc[0]
+                        df_cycle = df_cycle[(df_cycle['วันเวลา'] >= start_dt) & (df_cycle['วันเวลา'] <= end_dt)]
+                        df_cumulative = df_cumulative[df_cumulative['วันเวลา'] <= end_dt]
+                    else:
+                        df_cycle = df_cycle[df_cycle['วันเวลา'] >= start_dt]
                     break
-            
-            if not has_mom_7500:
-                with st.expander("🚨 พบสาเหตุยอดกรุงไทยติดลบ (-5,030.50 และ -6,811.21): แถวรับเงินเดือนแม่ 7,500 บาท (2026-06-25) หายไปจาก Google Sheets!", expanded=True):
-                    st.markdown("💡 เนื่องจากก่อนหน้านี้ระบบบันทึกทับโดยไม่มีแถวรับเงินเดือน 7,500 บาทแรกสุด ส่งผลให้ยอดกรุงไทยติดลบทันที **สามารถกดปุ่มสีส้มด้านล่างเพื่อกู้คืนข้อมูล 7,500 บาทลง Google Sheets อัตโนมัติในคลิกเดียวครับ!**")
-                    if st.button("⚡ กู้คืนยอดรับเงินเดือนแม่ 7,500 บาท (2026-06-25) เข้ากรุงไทยทันที", use_container_width=True):
-                        sheet.insert_row(["2026-06-25 00:00:00", "รายรับ", "เงินเดือน: จากแม่", 7500.0, "แม่โอนให้ใช้", "🏦 กรุงไทย"], 1)
-                        fetch_main_data.clear()
-                        st.success("🎉 กู้คืนยอดเงินเดือนแม่ 7,500 บาท เรียบร้อยแล้ว! ยอดกรุงไทยกลับมาเป็นบวกตามจริงแล้วครับ")
-                        st.rerun()
 
-            df_chart = df.copy()
-            
-            cycles_data = fetch_cycles()
-            df_cycles = pd.DataFrame(cycles_data) if cycles_data else pd.DataFrame(columns=["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
-            
-            cycle_options = []
-            active_cycle_name = "รอบปัจจุบัน"
-            active_row_idx = None
-            active_carry_forward = 0.0
-            
-            for idx, row in df_cycles.iterrows():
-                c_name = str(row['ชื่อรอบบัญชี']).strip()
-                c_status = str(row['สถานะ']).strip()
-                c_start = str(row['เริ่มต้น']).strip()
-                c_end = str(row['สิ้นสุด']).strip()
-                c_carry = float(row.get('ยอดยกมา', 0.0)) if pd.notnull(row.get('ยอดยกมา')) and str(row.get('ยอดยกมา')).strip() != "" else 0.0
-                c_kt_real = float(row.get('เงินจริงกรุงไทย', 0.0)) if pd.notnull(row.get('เงินจริงกรุงไทย')) and str(row.get('เงินจริงกรุงไทย')).strip() != "" else 0.0
-                
-                if c_status == "ACTIVE":
-                    active_cycle_name = c_name
-                    active_row_idx = idx + 2
-                    active_carry_forward = c_carry
-                    cycle_options.append((f"🟢 {c_name} (เริ่ม {c_start[:10]})", c_start, None, c_carry, c_kt_real, idx + 2))
-                else:
-                    cycle_options.append((f"📅 {c_name} ({c_start[:10]} - {c_end[:10]})", c_start, c_end, c_carry, c_kt_real, idx + 2))
-            
-            cycle_options.reverse()
-            cycle_labels = [opt[0] for opt in cycle_options] + ["🌟 แสดงข้อมูลทั้งหมด (All Time)"]
-            
-            col_dash_title, col_cycle_select = st.columns([1, 2])
-            with col_dash_title:
-                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Overview (รอบบัญชี)</p>", unsafe_allow_html=True)
-            with col_cycle_select:
-                selected_cycle_label = st.selectbox("⏳ เลือก Circle ในการแสดงผล:", cycle_labels, index=0, label_visibility="collapsed")
-            
-            df_cycle = df_chart.copy()
-            df_cumulative = df_chart.copy()
-            selected_carry = 0.0
-            selected_kt_real = 0.0
-            selected_row_idx = None
-            
-            if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
-                for label, start_str, end_str, carry_val, kt_val, r_idx in cycle_options:
-                    if label == selected_cycle_label:
-                        selected_carry = carry_val
-                        selected_kt_real = kt_val
-                        selected_row_idx = r_idx
-                        start_dt = parse_clean_datetime(pd.Series([start_str])).iloc[0]
-                        if end_str and pd.notnull(end_str) and str(end_str).strip() != "":
-                            end_dt = parse_clean_datetime(pd.Series([end_str])).iloc[0]
-                            df_cycle = df_cycle[(df_cycle['วันเวลา'] >= start_dt) & (df_cycle['วันเวลา'] <= end_dt)]
-                            df_cumulative = df_cumulative[df_cumulative['วันเวลา'] <= end_dt]
-                        else:
-                            df_cycle = df_cycle[df_cycle['วันเวลา'] >= start_dt]
-                        break
+        inv_mask = (
+            df_cycle['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
+            df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
+            df_cycle['รายละเอียด'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False)
+        ) & ~df_cycle['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
+        inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
 
-            inv_mask = (
-                df_cycle['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
-                df_cycle['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
-                df_cycle['รายละเอียด'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False)
-            ) & ~df_cycle['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
-            inv = float(df_cycle[inv_mask]['จำนวนเงิน'].sum())
+        _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
 
-            _, _, _, _, sav_flow, _ = calculate_savings_metrics(df_cycle)
+        inc_mask = (
+            df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
+            ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
+        )
+        inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
 
-            inc_mask = (
-                df_cycle['ประเภท'].astype(str).str.contains('รายรับ|income', case=False, na=False) &
-                ~df_cycle['ประเภท'].astype(str).str.contains('รับคืน|คืน|ปรับยอด', case=False, na=False)
-            )
-            inc = float(df_cycle[inc_mask]['จำนวนเงิน'].sum())
+        exp_mask = (
+            df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
+            ~inv_mask &
+            ~df_cycle['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน', case=False, na=False) &
+            ~df_cycle['ประเภท'].astype(str).str.contains('ปรับยอด', case=False, na=False)
+        )
+        exp = float(df_cycle[exp_mask]['จำนวนเงิน'].sum())
+        expense_df = df_cycle[exp_mask].copy()
 
-            exp_mask = (
-                df_cycle['ประเภท'].astype(str).str.contains('รายจ่าย|expense', case=False, na=False) &
-                ~inv_mask &
-                ~df_cycle['หมวดหมู่'].astype(str).str.contains('ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน', case=False, na=False) &
-                ~df_cycle['ประเภท'].astype(str).str.contains('ปรับยอด', case=False, na=False)
-            )
-            exp = float(df_cycle[exp_mask]['จำนวนเงิน'].sum())
-            expense_df = df_cycle[exp_mask].copy()
+        def is_transfer_row(row_type):
+            t = str(row_type).strip().lower()
+            return 'โอนย้าย' in t or 'transfer' in t
 
-            def is_transfer_row(row_type):
-                t = str(row_type).strip().lower()
-                return 'โอนย้าย' in t or 'transfer' in t
+        def is_income_type(row_type):
+            v = str(row_type).strip()
+            return bool('รายรับ' in v or 'ถอนเงินออม' in v or 'กู้เงินออม' in v or 'รับคืนเงินทดจ่าย' in v or 'ปรับยอดเพิ่ม' in v)
 
-            def is_income_type(row_type):
-                v = str(row_type).strip()
-                return bool('รายรับ' in v or 'ถอนเงินออม' in v or 'กู้เงินออม' in v or 'รับคืนเงินทดจ่าย' in v or 'ปรับยอดเพิ่ม' in v)
+        def is_expense_type(row_type):
+            v = str(row_type).strip()
+            return bool(('รายจ่าย' in v) or ('เงินลงทุน' in v) or ('เงินออม' in v and 'ถอน' not in v and 'กู้' not in v) or ('คืนเงินกู้ออม' in v) or ('เงินทดจ่าย' in v and 'รับคืน' not in v) or ('ปรับยอดลด' in v))
 
-            def is_expense_type(row_type):
-                v = str(row_type).strip()
-                return bool(('รายจ่าย' in v) or ('เงินลงทุน' in v) or ('เงินออม' in v and 'ถอน' not in v and 'กู้' not in v) or ('คืนเงินกู้ออม' in v) or ('เงินทดจ่าย' in v and 'รับคืน' not in v) or ('ปรับยอดลด' in v))
+        def safe_sum_by_mask(df_sub, mask_func):
+            if df_sub.empty or 'ประเภท' not in df_sub.columns:
+                return 0.0
+            mask = df_sub['ประเภท'].apply(mask_func).astype(bool)
+            return float(df_sub[mask]['จำนวนเงิน'].sum())
 
-            def safe_sum_by_mask(df_sub, mask_func):
-                if df_sub.empty or 'ประเภท' not in df_sub.columns:
-                    return 0.0
-                mask = df_sub['ประเภท'].apply(mask_func).astype(bool)
-                return float(df_sub[mask]['จำนวนเงิน'].sum())
-
-            wallet_balances = {w: 0.0 for w in wallet_list}
-            for w in wallet_list:
-                if "ออมสิน" in w:
-                    df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
-                    w_adj_in = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดเพิ่ม', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
-                    w_adj_out = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดลด', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
-                    wallet_balances[w] = total_sav_now + w_adj_in - w_adj_out
-                else:
-                    df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
-                    w_in = safe_sum_by_mask(df_w, is_income_type)
-                    w_out = safe_sum_by_mask(df_w, is_expense_type)
-                    wallet_balances[w] = w_in - w_out
-            
-            if not df_cumulative.empty and 'ประเภท' in df_cumulative.columns:
-                mask_tr = df_cumulative['ประเภท'].apply(is_transfer_row).astype(bool)
-                trans_df = df_cumulative[mask_tr]
-                if not trans_df.empty:
-                    for _, row in trans_df.iterrows():
-                        amt = float(row['จำนวนเงิน'])
-                        cat_str = str(row['หมวดหมู่']).strip().lower()
-                        rec_wallet = str(row['กระเป๋า']).strip()
-                        
-                        to_w = None
-                        for w in wallet_list:
-                            w_clean = w.lower()
-                            if "truemoney" in w_clean or "ทรู" in w_clean or "true money" in w_clean:
-                                if "truemoney" in cat_str or "ทรู" in cat_str or "true money" in cat_str:
-                                    to_w = w; break
-                            elif "กรุงไทย" in w_clean or "krungthai" in w_clean:
-                                if "กรุงไทย" in cat_str or "krungthai" in cat_str:
-                                    to_w = w; break
-                            elif "ออมสิน" in w_clean or "aomsin" in w_clean:
-                                if "ออมสิน" in cat_str or "aomsin" in cat_str:
-                                    to_w = w; break
-                            elif w_clean in cat_str:
+        wallet_balances = {w: 0.0 for w in wallet_list}
+        for w in wallet_list:
+            if "ออมสิน" in w:
+                df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
+                w_adj_in = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดเพิ่ม', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
+                w_adj_out = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดลด', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
+                wallet_balances[w] = total_sav_now + w_adj_in - w_adj_out
+            else:
+                df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
+                w_in = safe_sum_by_mask(df_w, is_income_type)
+                w_out = safe_sum_by_mask(df_w, is_expense_type)
+                wallet_balances[w] = w_in - w_out
+        
+        if not df_cumulative.empty and 'ประเภท' in df_cumulative.columns:
+            mask_tr = df_cumulative['ประเภท'].apply(is_transfer_row).astype(bool)
+            trans_df = df_cumulative[mask_tr]
+            if not trans_df.empty:
+                for _, row in trans_df.iterrows():
+                    amt = float(row['จำนวนเงิน'])
+                    cat_str = str(row['หมวดหมู่']).strip().lower()
+                    rec_wallet = str(row['กระเป๋า']).strip()
+                    
+                    to_w = None
+                    for w in wallet_list:
+                        w_clean = w.lower()
+                        if "truemoney" in w_clean or "ทรู" in w_clean or "true money" in w_clean:
+                            if "truemoney" in cat_str or "ทรู" in cat_str or "true money" in cat_str:
                                 to_w = w; break
-                        
-                        if to_w and to_w in wallet_balances:
-                            wallet_balances[to_w] += amt
-                            from_w = rec_wallet
-                            if from_w == to_w:
-                                for w in wallet_list:
-                                    if "กรุงไทย" in w or "krungthai" in w.lower():
-                                        from_w = w; break
-                            if from_w in wallet_balances and from_w != to_w:
-                                wallet_balances[from_w] -= amt
-
-            net_wealth_total = sum(wallet_balances.values())
-
-            # --- 💳 แสดงการ์ดธนาคาร ---
-            card_colors = ["#34c759", "#ff9500", "#007aff", "#5856d6", "#ff2d55", "#af52de", "#ff3b30"]
-            cards_html = ""
-            for idx, w in enumerate(wallet_list):
-                c = card_colors[idx % len(card_colors)]
-                bal = wallet_balances[w]
-                cards_html += f"<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02);'><span style='font-size: 13px; opacity: 0.7; color: var(--text-color);'>{w}</span><h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
-            cards_html += f"<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 16px 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02);'><span style='font-size: 13px; opacity: 0.7; color: var(--text-color);'>💰 รวมเงินทั้งหมด (Net Wealth)</span><h3 style='margin: 0; color: var(--text-color);'>฿{net_wealth_total:,.2f}</h3></div>"
-            st.markdown(f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>", unsafe_allow_html=True)
-
-            primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
-            primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
-
-            # 🔥 กล่องคาลิเบรท
-            if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
-                with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
-                    st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
+                        elif "กรุงไทย" in w_clean or "krungthai" in w_clean:
+                            if "กรุงไทย" in cat_str or "krungthai" in cat_str:
+                                to_w = w; break
+                        elif "ออมสิน" in w_clean or "aomsin" in w_clean:
+                            if "ออมสิน" in cat_str or "aomsin" in cat_str:
+                                to_w = w; break
+                        elif w_clean in cat_str:
+                            to_w = w; break
                     
-                    with st.form("multi_wallet_calibrate_form", clear_on_submit=False):
-                        target_balances = {}
-                        cols_per_row = min(4, len(wallet_list))
-                        for i in range(0, len(wallet_list), cols_per_row):
-                            row_wallets = wallet_list[i:i+cols_per_row]
-                            cols = st.columns(len(row_wallets))
-                            for j, w in enumerate(row_wallets):
-                                with cols[j]:
-                                    curr_val = wallet_balances.get(w, 0.0)
-                                    val = st.number_input(f"💳 {w}", value=None, placeholder=f"แอป: ฿{curr_val:,.2f}", step=10.0, format="%.2f", key=f"cal_inp_{i+j}")
-                                    target_balances[w] = val
-                        
-                        sync_btn = st.form_submit_button("⚡ ปรับยอดจริงทุกกระเป๋าให้ตรงทันที (1-Click Sync)", use_container_width=True)
-                        if sync_btn:
-                            now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                            changed = False
-                            for w, t_val in target_balances.items():
-                                if t_val is not None:
-                                    curr_b = wallet_balances.get(w, 0.0)
-                                    diff_w = t_val - curr_b
-                                    if abs(diff_w) >= 0.01:
-                                        changed = True
-                                        if diff_w > 0:
-                                            sheet.append_row([now_str, "⚖️ ปรับยอดเพิ่ม", "ปรับยอดบัญชีจริง", float(abs(diff_w)), "คาลิเบรทยอดเงินจริง", w])
-                                        else:
-                                            sheet.append_row([now_str, "⚖️ ปรับยอดลด", "ปรับยอดบัญชีจริง", float(abs(diff_w)), "คาลิเบรทยอดเงินจริง", w])
-                            if changed:
-                                fetch_main_data.clear()
-                                st.success("🎉 ซิงค์ยอดเงินจริงครบทุกกระเป๋าเรียบร้อยครับ!")
-                                st.rerun()
-                            else:
-                                st.warning("กรุณากรอกยอดเงินจริงของกระเป๋าที่ต้องการปรับอย่างน้อย 1 ช่องก่อนกดบันทึกครับ")
+                    if to_w and to_w in wallet_balances:
+                        wallet_balances[to_w] += amt
+                        from_w = rec_wallet
+                        if from_w == to_w:
+                            for w in wallet_list:
+                                if "กรุงไทย" in w or "krungthai" in w.lower():
+                                    from_w = w; break
+                        if from_w in wallet_balances and from_w != to_w:
+                            wallet_balances[from_w] -= amt
 
-            m1, m2, m3, m4, m5 = st.columns(5)
-            net_title_class = "metric-title" if net_wealth_total >= 0 else "metric-title-alert"
-            m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Wealth (รวมทั้งหมด)</div><div class='metric-value'>฿{net_wealth_total:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income (รอบนี้) <span style='color:#34c759;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
-            m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#ff3b30;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+        net_wealth_total = sum(wallet_balances.values())
+
+        # --- 💳 แสดงการ์ดธนาคาร ---
+        card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
+        cards_html = ""
+        for idx, w in enumerate(wallet_list):
+            c = card_colors[idx % len(card_colors)]
+            bal = wallet_balances[w]
+            cards_html += f"<div style='flex: 1; min-width: 170px; background-color: {c}18; border: 1px solid {c}; padding: 12px 18px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.8;'>{w}</span><h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
+        cards_html += f"<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินทั้งหมด (Net Wealth)</span><h3 style='margin: 0;'>฿{net_wealth_total:,.2f}</h3></div>"
+        st.markdown(f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>", unsafe_allow_html=True)
+
+        primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
+        primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
+
+        # 🔥 กล่องคาลิเบรท
+        if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
+            with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
+                st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
+                
+                with st.form("multi_wallet_calibrate_form", clear_on_submit=False):
+                    target_balances = {}
+                    cols_per_row = min(4, len(wallet_list))
+                    for i in range(0, len(wallet_list), cols_per_row):
+                        row_wallets = wallet_list[i:i+cols_per_row]
+                        cols = st.columns(len(row_wallets))
+                        for j, w in enumerate(row_wallets):
+                            with cols[j]:
+                                curr_val = wallet_balances.get(w, 0.0)
+                                val = st.number_input(f"💳 {w}", value=None, placeholder=f"แอป: ฿{curr_val:,.2f}", step=10.0, format="%.2f", key=f"cal_inp_{i+j}")
+                                target_balances[w] = val
+                    
+                    sync_btn = st.form_submit_button("⚡ ปรับยอดจริงทุกกระเป๋าให้ตรงทันที (1-Click Sync)", use_container_width=True)
+                    if sync_btn:
+                        now_str = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                        changed = False
+                        for w, t_val in target_balances.items():
+                            if t_val is not None:
+                                curr_b = wallet_balances.get(w, 0.0)
+                                diff_w = t_val - curr_b
+                                if abs(diff_w) >= 0.01:
+                                    changed = True
+                                    if diff_w > 0:
+                                        sheet.append_row([now_str, "⚖️ ปรับยอดเพิ่ม", "ปรับยอดบัญชีจริง", float(abs(diff_w)), "คาลิเบรทยอดเงินจริง", w])
+                                    else:
+                                        sheet.append_row([now_str, "⚖️ ปรับยอดลด", "ปรับยอดบัญชีจริง", float(abs(diff_w)), "คาลิเบรทยอดเงินจริง", w])
+                        if changed:
+                            fetch_main_data.clear()
+                            st.success("🎉 ซิงค์ยอดเงินจริงครบทุกกระเป๋าเรียบร้อยครับ!")
+                            st.rerun()
+                        else:
+                            st.warning("กรุณากรอกยอดเงินจริงของกระเป๋าที่ต้องการปรับอย่างน้อย 1 ช่องก่อนกดบันทึกครับ")
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+        net_title_class = "metric-title" if net_wealth_total >= 0 else "metric-title-alert"
+        m1.markdown(f"<div class='metric-card'><div class='{net_title_class}'>Net Wealth (รวมทั้งหมด)</div><div class='metric-value'>฿{net_wealth_total:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+        m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income (รอบนี้) <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#f9744b;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+        
+        loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หหนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
+        m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav_flow:,.0f}</div><div style='font-size:11px;color:#457b9d;font-weight:600;margin-top:2px;'>🏦 คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>", unsafe_allow_html=True)
+        m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # 🔥 🏆 สรุปการจัดสรรเงิน (ออม & ลงทุน) ในแต่ละรอบบัญชี
+        st.markdown("<p class='quick-add-text'>🏆 สรุปการจัดสรรเงิน (ออม & ลงทุน) ในแต่ละรอบบัญชี</p>", unsafe_allow_html=True)
+        cycle_summary_data = []
+        
+        for label, start_str, end_str, _, _, _ in cycle_options:
+            c_start_dt = parse_clean_datetime(pd.Series([start_str])).iloc[0]
+            if end_str and pd.notnull(end_str) and str(end_str).strip() != "":
+                c_end_dt = parse_clean_datetime(pd.Series([end_str])).iloc[0]
+                df_c = df_chart[(df_chart['วันเวลา'] >= c_start_dt) & (df_chart['วันเวลา'] <= c_end_dt)]
+            else:
+                df_c = df_chart[df_chart['วันเวลา'] >= c_start_dt]
+                
+            c_inv_mask = (
+                df_c['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
+                df_c['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
+                df_c['รายละเอียด'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False)
+            ) & ~df_c['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
+            c_inv = float(df_c[c_inv_mask]['จำนวนเงิน'].sum())
             
-            loan_badge = f"<div style='font-size:11px;color:#ff3b30;font-weight:600;margin-top:2px;'>⚠️ หนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
-            m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#007aff;'>↗</span></div><div class='metric-value'>฿{sav_flow:,.0f}</div><div style='font-size:11px;color:#007aff;font-weight:600;margin-top:2px;'>🏦 คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>", unsafe_allow_html=True)
-            m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#ff9500;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
+            _, _, _, _, c_sav, _ = calculate_savings_metrics(df_c)
             
-            st.markdown("---")
+            clean_label = label.replace("🟢 ", "").replace("📅 ", "").split(" (")[0]
             
-            # 🔥 🏆 สรุปการจัดสรรเงิน (ออม & ลงทุน) ในแต่ละรอบบัญชี
-            st.markdown("<p class='quick-add-text'>🏆 สรุปการจัดสรรเงิน (ออม & ลงทุน) ในแต่ละรอบบัญชี</p>", unsafe_allow_html=True)
-            cycle_summary_data = []
+            cycle_summary_data.append({
+                "รอบบัญชี (Cycle)": clean_label,
+                "🐷 เงินออม (Savings)": c_sav,
+                "📈 เงินลงทุน (Investments)": c_inv
+            })
             
-            for label, start_str, end_str, _, _, _ in cycle_options:
-                c_start_dt = parse_clean_datetime(pd.Series([start_str])).iloc[0]
-                if end_str and pd.notnull(end_str) and str(end_str).strip() != "":
-                    c_end_dt = parse_clean_datetime(pd.Series([end_str])).iloc[0]
-                    df_c = df_chart[(df_chart['วันเวลา'] >= c_start_dt) & (df_chart['วันเวลา'] <= c_end_dt)]
+        if cycle_summary_data:
+            df_cycle_sum = pd.DataFrame(cycle_summary_data[::-1])
+            
+            c_cy_chart, c_cy_table = st.columns([1.8, 1])
+            with c_cy_chart:
+                df_melt = df_cycle_sum.melt(id_vars="รอบบัญชี (Cycle)", var_name="ประเภท", value_name="จำนวนเงิน")
+                fig_cy = px.bar(df_melt, x="รอบบัญชี (Cycle)", y="จำนวนเงิน", color="ประเภท", barmode="group",
+                                color_discrete_map={"🐷 เงินออม (Savings)": "#457b9d", "📈 เงินลงทุน (Investments)": "#e9c46a"}, text="จำนวนเงิน")
+                fig_cy.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
+                fig_cy.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(showgrid=False, title=""),
+                    yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
+                    margin=dict(t=30, b=0, l=0, r=0), uniformtext_minsize=9, uniformtext_mode='hide'
+                )
+                st.plotly_chart(fig_cy, use_container_width=True, theme="streamlit")
+            
+            with c_cy_table:
+                st.caption("📋 ตารางสรุปยอดแยกตามรอบบัญชี")
+                df_cycle_show = df_cycle_sum.copy().sort_index(ascending=False)
+                df_cycle_show["🐷 เงินออม (Savings)"] = df_cycle_show["🐷 เงินออม (Savings)"].apply(lambda x: f"฿ {x:,.2f}")
+                df_cycle_show["📈 เงินลงทุน (Investments)"] = df_cycle_show["📈 เงินลงทุน (Investments)"].apply(lambda x: f"฿ {x:,.2f}")
+                st.dataframe(df_cycle_show, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        
+        # 🔥 🛡️ Smart Budget Tracker
+        col_b_title, col_b_toggle = st.columns([2.5, 1])
+        with col_b_title:
+            st.markdown("<p class='quick-add-text'>🛡️ Smart Budget Tracker (ระบบควบคุมงบประมาณ)</p>", unsafe_allow_html=True)
+        with col_b_toggle:
+            enable_budget = st.toggle("🎯 เปิดโหมด Budget Tracker", value=False)
+            
+        if enable_budget:
+            st.caption("💡 ติดตามว่าคุณใช้เงินไปเท่าไหร่แล้วในแต่ละหมวดหมู่ (ตั้งงบได้ทั้งหมวดหลักและย่อย) และเหลือโควต้าอีกกี่บาท")
+            
+            with st.expander("⚙️ ตั้งค่างบประมาณ (Set Budgets)", expanded=False):
+                st.info("คลิกที่ช่อง 'หมวดหมู่เป้าหมาย' เพื่อเลือกหมวดหมู่หลัก หรือ หมวดหมู่ย่อย ที่ต้องการคุมงบประมาณได้เลยครับ 👇")
+                
+                budget_options = []
+                if "💸 รายจ่าย" in SUB_CATEGORIES:
+                    for main_cat, sub_cats in SUB_CATEGORIES["💸 รายจ่าย"].items():
+                        budget_options.append(main_cat) 
+                        for sub_cat in sub_cats:
+                            if sub_cat != "ทั่วไป" and sub_cat.strip() != "":
+                                budget_options.append(f"{main_cat}: {sub_cat}")
+                budget_options = sorted(list(set(budget_options)))
+                
+                if not budget_options:
+                    budget_options = ["อาหาร/เครื่องดื่ม", "ค่าเดินทาง", "ของใช้ส่วนตัว"]
+
+                edited_budgets = st.data_editor(
+                    df_budgets,
+                    use_container_width=True,
+                    num_rows="dynamic",
+                    column_config={
+                        "หมวดหมู่เป้าหมาย": st.column_config.SelectboxColumn(
+                            "หมวดหมู่เป้าหมาย (เลือก)",
+                            help="เลือกหมวดหมู่ที่ต้องการจำกัดงบ",
+                            options=budget_options,
+                            required=True
+                        ),
+                        "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
+                    },
+                    key="budget_editor_v12"
+                )
+                if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
+                    budget_sheet.clear()
+                    budget_sheet.update(range_name="A1", values=[edited_budgets.columns.values.tolist()] + edited_budgets.values.tolist())
+                    fetch_budgets.clear()
+                    st.success("อัปเดตงบประมาณเรียบร้อย!")
+                    st.rerun()
+
+            exp_summary = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
+            exp_sub_summary = expense_df.groupby('หมวดหมู่', as_index=False)['จำนวนเงิน'].sum()
+            
+            spent_dict = {}
+            for _, r in exp_summary.iterrows():
+                spent_dict[str(r['หมวดหมู่หลัก']).strip()] = float(r['จำนวนเงิน'])
+            for _, r in exp_sub_summary.iterrows():
+                spent_dict[str(r['หมวดหมู่']).strip()] = float(r['จำนวนเงิน'])
+
+            all_tracked_cats = [str(x).strip() for x in df_budgets["หมวดหมู่เป้าหมาย"].tolist() if str(x).strip()]
+            
+            if not all_tracked_cats:
+                st.warning("⚠️ ยังไม่ได้ตั้งค่างบประมาณ กรุณากดเมนู '⚙️ ตั้งค่างบประมาณ' ด้านบนครับ")
+            else:
+                selected_trackers = st.multiselect("🔎 เลือกหมวดหมู่ที่ต้องการดูงบประมาณ:", all_tracked_cats, default=all_tracked_cats, key="budget_tracker_select")
+                
+                if selected_trackers:
+                    for cat in selected_trackers:
+                        try:
+                            budget_amt = float(df_budgets[df_budgets["หมวดหมู่เป้าหมาย"] == cat]["งบประมาณ (บาท)"].iloc[0])
+                        except:
+                            budget_amt = 0.0
+                            
+                        spent_amt = spent_dict.get(cat, 0.0)
+                        rem_amt = budget_amt - spent_amt
+                        pct = (spent_amt / budget_amt) * 100 if budget_amt > 0 else 100
+                        
+                        if pct < 60: 
+                            color, emo, msg = "#2a9d8f", "🟢", "ดีมาก! คุณยังเหลือโควต้าอีกเยอะ ใช้จ่ายได้สบายๆ"
+                        elif pct < 85: 
+                            color, emo, msg = "#e9c46a", "🟡", "เริ่มตึงมือแล้วนะ! ควรระมัดระวังการใช้จ่ายในหมวดหมู่นี้"
+                        elif pct <= 100: 
+                            color, emo, msg = "#f9744b", "🟠", "อันตราย! งบหมวดนี้ใกล้จะทะลุแล้ว เลี่ยงการซื้อของที่ไม่จำเป็นด่วน"
+                        else: 
+                            color, emo, msg = "#d62828", "🔴", "ทะลุงบ! คุณใช้เงินเกินโควต้าที่ตั้งไว้แล้ว ควรประหยัดงบส่วนอื่นมาชดเชย"
+
+                        st.markdown(f"""
+                        <div style='background-color: var(--secondary-background-color); border: 1px solid {color}50; border-left: 5px solid {color}; padding: 15px; border-radius: 10px; margin-bottom: 12px;'>
+                            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;'>
+                                <span style='font-size: 16px; font-weight: 600;'>{emo} {cat}</span>
+                                <span style='font-size: 14px; font-weight: 600; color: {color};'>{pct:.1f}%</span>
+                            </div>
+                            <div style='width: 100%; background-color: rgba(128,128,128,0.2); border-radius: 10px; height: 8px; margin-bottom: 10px;'>
+                                <div style='width: {min(pct, 100)}%; background-color: {color}; border-radius: 10px; height: 100%;'></div>
+                            </div>
+                            <div style='display: flex; justify-content: space-between; font-size: 13px; opacity: 0.8;'>
+                                <span>💸 ใช้ไป: <b>฿{spent_amt:,.2f}</b></span>
+                                <span>🎯 งบตั้งไว้: <b>฿{budget_amt:,.2f}</b></span>
+                                <span>💳 คงเหลือ: <b style='color: {color};'>฿{rem_amt:,.2f}</b></span>
+                            </div>
+                            <div style='margin-top: 8px; font-size: 12px; color: {color}; font-weight: 500;'>
+                                💡 Smart Insight: {msg}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                 else:
-                    df_c = df_chart[df_chart['วันเวลา'] >= c_start_dt]
+                    st.info("กรุณาเลือกหมวดหมู่ที่ต้องการติดตามครับ")
+        st.markdown("---")
+
+        # ==========================================
+        # 🔄 Cycle Control
+        # ==========================================
+        with st.expander("🔄 เปิด Circle ใหม่ & สั่งตัดรอบบัญชี (Cycle Control)", expanded=False):
+            st.write(f"📌 รอบบัญชีที่กำลังใช้งานอยู่ตอนนี้คือ: **{active_cycle_name}**")
+            with st.form("new_cycle_form"):
+                new_circle_name = st.text_input("ชื่อ Circle ใหม่ที่จะเปิด (เช่น September 2026)", placeholder="ระบุชื่อรอบเดือนใหม่...")
+                if st.form_submit_button("⏹️ จบรอบปัจจุบัน & เริ่ม Circle ใหม่ทันที", use_container_width=True):
+                    now_timestamp = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
+                    if active_row_idx:
+                        cycle_sheet.update_cell(int(active_row_idx), 3, now_timestamp)
+                        cycle_sheet.update_cell(int(active_row_idx), 4, "CLOSED")
+                        cycle_sheet.update_cell(int(active_row_idx), 6, float(primary_wallet_bal))
                     
-                c_inv_mask = (
-                    df_c['ประเภท'].astype(str).str.contains('ลงทุน|invest', case=False, na=False) |
-                    df_c['หมวดหมู่'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False) |
-                    df_c['รายละเอียด'].astype(str).str.contains('ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง', case=False, na=False)
-                ) & ~df_c['ประเภท'].astype(str).str.contains('ถอน|คืน|ปรับยอด', case=False, na=False)
-                c_inv = float(df_c[c_inv_mask]['จำนวนเงิน'].sum())
+                    final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
+                    start_carry = float(selected_kt_real) if selected_kt_real > 0 else float(primary_wallet_bal)
+                    cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", start_carry, start_carry])
+                    fetch_cycles.clear()
+                    st.success(f"จบรอบเดิมและเริ่ม {final_name} พร้อมตั้งต้นด้วยยอดจริง ฿{start_carry:,.2f} เรียบร้อยครับ!")
+                    st.rerun()
+
+        st.markdown("---")
+
+        # ==========================================
+        # 🔥 📊 Periodic Bar Analysis
+        # ==========================================
+        def clean_type_name(t_str):
+            t = str(t_str).strip()
+            if 'รายรับ' in t and 'รับคืน' not in t: return 'รายรับ'
+            if 'รายจ่าย' in t: return 'รายจ่าย'
+            if 'ลงทุน' in t: return 'เงินลงทุน'
+            if 'ถอน' in t and 'ออม' in t: return 'ถอนเงินออม'
+            if 'กู้' in t and 'ออม' in t and 'คืน' not in t: return 'กู้เงินออม'
+            if 'คืน' in t and 'กู้' in t: return 'คืนเงินกู้ออม'
+            if 'ออม' in t: return 'เงินออม'
+            return t
+
+        col_bar_title, col_bar_filter = st.columns([1.5, 2.5])
+        with col_bar_title:
+            st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Periodic Bar Analysis (กราฟแท่งตามช่วงเวลา)</p>", unsafe_allow_html=True)
+        with col_bar_filter:
+            c_bf1, c_bf2 = st.columns([1.2, 2.3])
+            bar_timeframe = c_bf1.selectbox("ช่วงเวลา (Timeframe):", ["รายวัน (Daily)", "รายสัปดาห์ (Weekly)", "รายเดือน (Monthly)", "รายปี (Yearly)"], index=0, key="bar_tf_select")
+            bar_metric_mode = c_bf2.selectbox("เลือกมิติข้อมูลที่ต้องการดู:", [
+                "💸 รายจ่าย (Expenses)",
+                "📥 รายรับ (Income)",
+                "🐷 เงินออม (Savings)",
+                "📈 เงินลงทุน (Investments)",
+                "📊 เปรียบเทียบทุกประเภท (Grouped Bar)"
+            ], index=0, key="bar_metric_select")
+
+        df_bar_raw = df_cycle.copy() if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)" else df_chart.copy()
+        df_bar_raw = df_bar_raw.dropna(subset=['วันเวลา'])
+        df_bar_raw = df_bar_raw.sort_values(by='วันเวลา')
+
+        if not df_bar_raw.empty:
+            df_bar_raw['ประเภท_clean'] = df_bar_raw['ประเภท'].apply(clean_type_name)
+
+            if "รายวัน" in bar_timeframe:
+                df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['วันเวลา'].dt.strftime('%d %b %Y')
+                df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.date
+                time_unit_label = "วัน"
+            elif "รายสัปดาห์" in bar_timeframe:
+                df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('W').dt.start_time
+                df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('W%W (%d %b %Y)')
+                time_unit_label = "สัปดาห์"
+            elif "รายเดือน" in bar_timeframe:
+                df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('M').dt.start_time
+                df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('%b %Y')
+                time_unit_label = "เดือน"
+            else:
+                df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('Y').dt.start_time
+                df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('%Y')
+                time_unit_label = "ปี"
+
+            if "เปรียบเทียบทุกประเภท" in bar_metric_mode:
+                target_types = ['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน']
+            elif "รายจ่าย" in bar_metric_mode:
+                target_types = ['รายจ่าย']
+            elif "รายรับ" in bar_metric_mode:
+                target_types = ['รายรับ']
+            elif "เงินออม" in bar_metric_mode:
+                target_types = ['เงินออม']
+            else:
+                target_types = ['เงินลงทุน']
+            
+            df_bar_metric = df_bar_raw[df_bar_raw['ประเภท_clean'].isin(target_types)].copy()
+            
+            if not df_bar_metric.empty:
+                available_cats_bar = sorted([str(c) for c in df_bar_metric['หมวดหมู่หลัก'].unique() if pd.notnull(c) and str(c).strip() != ""])
+                selected_bar_cats = st.multiselect(f"🔎 กรองดูเฉพาะหมวดหมู่หลัก (เว้นว่างเพื่อดูทั้งหมด):", available_cats_bar, default=[], key="bar_cat_select")
                 
-                _, _, _, _, c_sav, _ = calculate_savings_metrics(df_c)
-                
-                clean_label = label.replace("🟢 ", "").replace("📅 ", "").split(" (")[0]
-                
-                cycle_summary_data.append({
-                    "รอบบัญชี (Cycle)": clean_label,
-                    "🐷 เงินออม (Savings)": c_sav,
-                    "📈 เงินลงทุน (Investments)": c_inv
-                })
-                
-            if cycle_summary_data:
-                df_cycle_sum = pd.DataFrame(cycle_summary_data[::-1])
-                
-                c_cy_chart, c_cy_table = st.columns([1.8, 1])
-                with c_cy_chart:
-                    df_melt = df_cycle_sum.melt(id_vars="รอบบัญชี (Cycle)", var_name="ประเภท", value_name="จำนวนเงิน")
-                    fig_cy = px.bar(df_melt, x="รอบบัญชี (Cycle)", y="จำนวนเงิน", color="ประเภท", barmode="group",
-                                    color_discrete_map={"🐷 เงินออม (Savings)": "#007aff", "📈 เงินลงทุน (Investments)": "#ff9500"}, text="จำนวนเงิน")
-                    fig_cy.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
-                    fig_cy.update_layout(
+                if selected_bar_cats:
+                    df_bar_metric = df_bar_metric[df_bar_metric['หมวดหมู่หลัก'].isin(selected_bar_cats)]
+                    
+                if not df_bar_metric.empty:
+                    total_amt = df_bar_metric['จำนวนเงิน'].sum()
+                    unique_periods = df_bar_metric['sort_key'].nunique()
+                    avg_amt = total_amt / unique_periods if unique_periods > 0 else 0
+                    
+                    st.markdown(f"**💡 สรุปยอดรวมที่เลือก:** ทั้งหมด **฿{total_amt:,.2f}** | เฉลี่ย **฿{avg_amt:,.2f} / {time_unit_label}** (จาก {unique_periods} {time_unit_label})")
+
+                    if "เปรียบเทียบทุกประเภท" in bar_metric_mode:
+                        grouped_bar_data = df_bar_metric.groupby(['sort_key', 'ช่วงเวลา_str', 'ประเภท_clean'], as_index=False)['จำนวนเงิน'].sum()
+                        grouped_bar_data = grouped_bar_data.sort_values(by='sort_key')
+                        
+                        fig_bar = px.bar(
+                            grouped_bar_data, 
+                            x='ช่วงเวลา_str', 
+                            y='จำนวนเงิน', 
+                            color='ประเภท_clean',
+                            color_discrete_map=HONEY_POT_MAP,
+                            barmode='group',
+                            text='จำนวนเงิน'
+                        )
+                        fig_bar.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
+                    else:
+                        stacked_data = df_bar_metric.groupby(['sort_key', 'ช่วงเวลา_str', 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
+                        stacked_data = stacked_data.sort_values(by=['sort_key', 'จำนวนเงิน'], ascending=[True, False])
+                        
+                        fig_bar = px.bar(
+                            stacked_data, 
+                            x='ช่วงเวลา_str', 
+                            y='จำนวนเงิน', 
+                            color='หมวดหมู่หลัก',
+                            color_discrete_sequence=SUB_CAT_PALETTE,
+                            hover_data={'หมวดหมู่ย่อย': True, 'รายละเอียด': True, 'sort_key': False},
+                            text='จำนวนเงิน'
+                        )
+                        fig_bar.update_traces(texttemplate='฿%{text:,.0f}', textposition='inside', insidetextanchor='middle')
+
+                        total_by_period = stacked_data.groupby(['sort_key', 'ช่วงเวลา_str'], as_index=False)['จำนวนเงิน'].sum()
+                        for _, r in total_by_period.iterrows():
+                            fig_bar.add_annotation(
+                                x=r['ช่วงเวลา_str'],
+                                y=r['จำนวนเงิน'],
+                                text=f"<b>฿{r['จำนวนเงิน']:,.0f}</b>",
+                                showarrow=False,
+                                yshift=14,
+                                font=dict(size=14, color='white')
+                            )
+
+                    fig_bar.update_layout(
                         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
                         xaxis=dict(showgrid=False, title=""),
                         yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
-                        margin=dict(t=30, b=0, l=0, r=0), uniformtext_minsize=9, uniformtext_mode='hide'
+                        margin=dict(t=30, b=0, l=0, r=0),
+                        uniformtext_minsize=9, uniformtext_mode='hide'
                     )
-                    st.plotly_chart(fig_cy, use_container_width=True, theme="streamlit")
-                
-                with c_cy_table:
-                    st.caption("📋 ตารางสรุปยอดแยกตามรอบบัญชี")
-                    df_cycle_show = df_cycle_sum.copy().sort_index(ascending=False)
-                    df_cycle_show["🐷 เงินออม (Savings)"] = df_cycle_show["🐷 เงินออม (Savings)"].apply(lambda x: f"฿ {x:,.2f}")
-                    df_cycle_show["📈 เงินลงทุน (Investments)"] = df_cycle_show["📈 เงินลงทุน (Investments)"].apply(lambda x: f"฿ {x:,.2f}")
-                    st.dataframe(df_cycle_show, use_container_width=True, hide_index=True)
+                    st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
 
-            st.markdown("---")
-            
-            # 🔥 🛡️ Smart Budget Tracker
-            col_b_title, col_b_toggle = st.columns([2.5, 1])
-            with col_b_title:
-                st.markdown("<p class='quick-add-text'>🛡️ Smart Budget Tracker (ระบบควบคุมงบประมาณ)</p>", unsafe_allow_html=True)
-            with col_b_toggle:
-                enable_budget = st.toggle("🎯 เปิดโหมด Budget Tracker", value=False)
-                
-            if enable_budget:
-                st.caption("💡 ติดตามว่าคุณใช้เงินไปเท่าไหร่แล้วในแต่ละหมวดหมู่ (ตั้งงบได้ทั้งหมวดหลักและย่อย) และเหลือโควต้าอีกกี่บาท")
-                
-                with st.expander("⚙️ ตั้งค่างบประมาณ (Set Budgets)", expanded=False):
-                    st.info("คลิกที่ช่อง 'หมวดหมู่เป้าหมาย' เพื่อเลือกหมวดหมู่หลัก หรือ หมวดหมู่ย่อย ที่ต้องการคุมงบประมาณได้เลยครับ 👇")
-                    
-                    budget_options = []
-                    if "💸 รายจ่าย" in SUB_CATEGORIES:
-                        for main_cat, sub_cats in SUB_CATEGORIES["💸 รายจ่าย"].items():
-                            budget_options.append(main_cat) 
-                            for sub_cat in sub_cats:
-                                if sub_cat != "ทั่วไป" and sub_cat.strip() != "":
-                                    budget_options.append(f"{main_cat}: {sub_cat}")
-                    budget_options = sorted(list(set(budget_options)))
-                    
-                    if not budget_options:
-                        budget_options = ["อาหาร/เครื่องดื่ม", "ค่าเดินทาง", "ของใช้ส่วนตัว"]
-
-                    edited_budgets = st.data_editor(
-                        df_budgets,
-                        use_container_width=True,
-                        num_rows="dynamic",
-                        column_config={
-                            "หมวดหมู่เป้าหมาย": st.column_config.SelectboxColumn(
-                                "หมวดหมู่เป้าหมาย (เลือก)",
-                                help="เลือกหมวดหมู่ที่ต้องการจำกัดงบ",
-                                options=budget_options,
-                                required=True
-                            ),
-                            "งบประมาณ (บาท)": st.column_config.NumberColumn("งบประมาณ (บาท)", min_value=0.0, format="฿ %.2f")
-                        },
-                        key="budget_editor_v13"
-                    )
-                    if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
-                        budget_sheet.clear()
-                        budget_sheet.update(range_name="A1", values=[edited_budgets.columns.values.tolist()] + edited_budgets.values.tolist())
-                        fetch_budgets.clear()
-                        st.success("อัปเดตงบประมาณเรียบร้อย!")
-                        st.rerun()
-
-                exp_summary = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
-                exp_sub_summary = expense_df.groupby('หมวดหมู่', as_index=False)['จำนวนเงิน'].sum()
-                
-                spent_dict = {}
-                for _, r in exp_summary.iterrows():
-                    spent_dict[str(r['หมวดหมู่หลัก']).strip()] = float(r['จำนวนเงิน'])
-                for _, r in exp_sub_summary.iterrows():
-                    spent_dict[str(r['หมวดหมู่']).strip()] = float(r['จำนวนเงิน'])
-
-                all_tracked_cats = [str(x).strip() for x in df_budgets["หมวดหมู่เป้าหมาย"].tolist() if str(x).strip()]
-                
-                if not all_tracked_cats:
-                    st.warning("⚠️ ยังไม่ได้ตั้งค่างบประมาณ กรุณากดเมนู '⚙️ ตั้งค่างบประมาณ' ด้านบนครับ")
+                    if "เปรียบเทียบทุกประเภท" not in bar_metric_mode:
+                        with st.expander(f"📋 ตารางรายละเอียดแจกแจงรายการ ({bar_metric_mode.split(' ')[1]})", expanded=False):
+                            st.caption("💡 ดูรายละเอียดและข้อความบันทึกย่อย (Note) ว่าใช้จ่าย/รับเงิน จากอะไรบ้างในแต่ละบิลครับ")
+                            show_exp_table = df_bar_metric[['วันที่', 'หมวดหมู่', 'รายละเอียด', 'จำนวนเงิน', 'กระเป๋า']].sort_values(by='วันที่', ascending=False)
+                            st.dataframe(show_exp_table, use_container_width=True, hide_index=True)
                 else:
-                    selected_trackers = st.multiselect("🔎 เลือกหมวดหมู่ที่ต้องการดูงบประมาณ:", all_tracked_cats, default=all_tracked_cats, key="budget_tracker_select")
-                    
-                    if selected_trackers:
-                        for cat in selected_trackers:
-                            try:
-                                budget_amt = float(df_budgets[df_budgets["หมวดหมู่เป้าหมาย"] == cat]["งบประมาณ (บาท)"].iloc[0])
-                            except:
-                                budget_amt = 0.0
-                                
-                            spent_amt = spent_dict.get(cat, 0.0)
-                            rem_amt = budget_amt - spent_amt
-                            pct = (spent_amt / budget_amt) * 100 if budget_amt > 0 else 100
-                            
-                            if pct < 60: 
-                                color, emo, msg = "#34c759", "🟢", "ดีมาก! คุณยังเหลือโควต้าอีกเยอะ ใช้จ่ายได้สบายๆ"
-                            elif pct < 85: 
-                                color, emo, msg = "#ffcc00", "🟡", "เริ่มตึงมือแล้วนะ! ควรระมัดระวังการใช้จ่ายในหมวดหมู่นี้"
-                            elif pct <= 100: 
-                                color, emo, msg = "#ff9500", "🟠", "อันตราย! งบหมวดนี้ใกล้จะทะลุแล้ว เลี่ยงการซื้อของที่ไม่จำเป็นด่วน"
-                            else: 
-                                color, emo, msg = "#ff3b30", "🔴", "ทะลุงบ! คุณใช้เงินเกินโควต้าที่ตั้งไว้แล้ว ควรประหยัดงบส่วนอื่นมาชดเชย"
-
-                            st.markdown(f"""
-                            <div class='apple-info-box' style='border-left: 5px solid {color};'>
-                                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;'>
-                                    <span style='font-size: 16px; font-weight: 600;'>{emo} {cat}</span>
-                                    <span style='font-size: 14px; font-weight: 600; color: {color};'>{pct:.1f}%</span>
-                                </div>
-                                <div style='width: 100%; background-color: rgba(128,128,128,0.2); border-radius: 10px; height: 8px; margin-bottom: 10px;'>
-                                    <div style='width: {min(pct, 100)}%; background-color: {color}; border-radius: 10px; height: 100%;'></div>
-                                </div>
-                                <div style='display: flex; justify-content: space-between; font-size: 13px; opacity: 0.8;'>
-                                    <span>💸 ใช้ไป: <b>฿{spent_amt:,.2f}</b></span>
-                                    <span>🎯 งบตั้งไว้: <b>฿{budget_amt:,.2f}</b></span>
-                                    <span>💳 คงเหลือ: <b style='color: {color};'>฿{rem_amt:,.2f}</b></span>
-                                </div>
-                                <div style='margin-top: 8px; font-size: 12px; color: {color}; font-weight: 500;'>
-                                    💡 Smart Insight: {msg}
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    else:
-                        st.info("กรุณาเลือกหมวดหมู่ที่ต้องการติดตามครับ")
-            st.markdown("---")
-
-            # ==========================================
-            # 🔄 Cycle Control
-            # ==========================================
-            with st.expander("🔄 เปิด Circle ใหม่ & สั่งตัดรอบบัญชี (Cycle Control)", expanded=False):
-                st.write(f"📌 รอบบัญชีที่กำลังใช้งานอยู่ตอนนี้คือ: **{active_cycle_name}**")
-                with st.form("new_cycle_form"):
-                    new_circle_name = st.text_input("ชื่อ Circle ใหม่ที่จะเปิด (เช่น September 2026)", placeholder="ระบุชื่อรอบเดือนใหม่...")
-                    if st.form_submit_button("⏹️ จบรอบปัจจุบัน & เริ่ม Circle ใหม่ทันที", use_container_width=True):
-                        now_timestamp = datetime.datetime.now(TZ_TH).strftime('%Y-%m-%d %H:%M:%S')
-                        if active_row_idx:
-                            cycle_sheet.update_cell(int(active_row_idx), 3, now_timestamp)
-                            cycle_sheet.update_cell(int(active_row_idx), 4, "CLOSED")
-                            cycle_sheet.update_cell(int(active_row_idx), 6, float(primary_wallet_bal))
-                        
-                        final_name = new_circle_name if new_circle_name.strip() else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
-                        start_carry = float(selected_kt_real) if selected_kt_real > 0 else float(primary_wallet_bal)
-                        cycle_sheet.append_row([final_name, now_timestamp, "", "ACTIVE", start_carry, start_carry])
-                        fetch_cycles.clear()
-                        st.success(f"จบรอบเดิมและเริ่ม {final_name} พร้อมตั้งต้นด้วยยอดจริง ฿{start_carry:,.2f} เรียบร้อยครับ!")
-                        st.rerun()
-
-            st.markdown("---")
-
-            # ==========================================
-            # 🔥 📊 Periodic Bar Analysis
-            # ==========================================
-            def clean_type_name(t_str):
-                t = str(t_str).strip()
-                if 'รายรับ' in t and 'รับคืน' not in t: return 'รายรับ'
-                if 'รายจ่าย' in t: return 'รายจ่าย'
-                if 'ลงทุน' in t: return 'เงินลงทุน'
-                if 'ถอน' in t and 'ออม' in t: return 'ถอนเงินออม'
-                if 'กู้' in t and 'ออม' in t and 'คืน' not in t: return 'กู้เงินออม'
-                if 'คืน' in t and 'กู้' in t: return 'คืนเงินกู้ออม'
-                if 'ออม' in t: return 'เงินออม'
-                return t
-
-            col_bar_title, col_bar_filter = st.columns([1.5, 2.5])
-            with col_bar_title:
-                st.markdown("<p class='quick-add-text' style='margin-top:5px;'>📊 Periodic Bar Analysis (กราฟแท่งตามช่วงเวลา)</p>", unsafe_allow_html=True)
-            with col_bar_filter:
-                c_bf1, c_bf2 = st.columns([1.2, 2.3])
-                bar_timeframe = c_bf1.selectbox("ช่วงเวลา (Timeframe):", ["รายวัน (Daily)", "รายสัปดาห์ (Weekly)", "รายเดือน (Monthly)", "รายปี (Yearly)"], index=0, key="bar_tf_select")
-                bar_metric_mode = c_bf2.selectbox("เลือกมิติข้อมูลที่ต้องการดู:", [
-                    "💸 รายจ่าย (Expenses)",
-                    "📥 รายรับ (Income)",
-                    "🐷 เงินออม (Savings)",
-                    "📈 เงินลงทุน (Investments)",
-                    "📊 เปรียบเทียบทุกประเภท (Grouped Bar)"
-                ], index=0, key="bar_metric_select")
-
-            df_bar_raw = df_cycle.copy() if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)" else df_chart.copy()
-            df_bar_raw = df_bar_raw.dropna(subset=['วันเวลา'])
-            df_bar_raw = df_bar_raw.sort_values(by='วันเวลา')
-
-            if not df_bar_raw.empty:
-                df_bar_raw['ประเภท_clean'] = df_bar_raw['ประเภท'].apply(clean_type_name)
-
-                if "รายวัน" in bar_timeframe:
-                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['วันเวลา'].dt.strftime('%d %b %Y')
-                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.date
-                    time_unit_label = "วัน"
-                elif "รายสัปดาห์" in bar_timeframe:
-                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('W').dt.start_time
-                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('W%W (%d %b %Y)')
-                    time_unit_label = "สัปดาห์"
-                elif "รายเดือน" in bar_timeframe:
-                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('M').dt.start_time
-                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('%b %Y')
-                    time_unit_label = "เดือน"
-                else:
-                    df_bar_raw['sort_key'] = df_bar_raw['วันเวลา'].dt.to_period('Y').dt.start_time
-                    df_bar_raw['ช่วงเวลา_str'] = df_bar_raw['sort_key'].dt.strftime('%Y')
-                    time_unit_label = "ปี"
-
-                if "เปรียบเทียบทุกประเภท" in bar_metric_mode:
-                    target_types = ['รายรับ', 'รายจ่าย', 'เงินออม', 'เงินลงทุน']
-                elif "รายจ่าย" in bar_metric_mode:
-                    target_types = ['รายจ่าย']
-                elif "รายรับ" in bar_metric_mode:
-                    target_types = ['รายรับ']
-                elif "เงินออม" in bar_metric_mode:
-                    target_types = ['เงินออม']
-                else:
-                    target_types = ['เงินลงทุน']
-                
-                df_bar_metric = df_bar_raw[df_bar_raw['ประเภท_clean'].isin(target_types)].copy()
-                
-                if not df_bar_metric.empty:
-                    available_cats_bar = sorted([str(c) for c in df_bar_metric['หมวดหมู่หลัก'].unique() if pd.notnull(c) and str(c).strip() != ""])
-                    selected_bar_cats = st.multiselect(f"🔎 กรองดูเฉพาะหมวดหมู่หลัก (เว้นว่างเพื่อดูทั้งหมด):", available_cats_bar, default=[], key="bar_cat_select")
-                    
-                    if selected_bar_cats:
-                        df_bar_metric = df_bar_metric[df_bar_metric['หมวดหมู่หลัก'].isin(selected_bar_cats)]
-                        
-                    if not df_bar_metric.empty:
-                        total_amt = df_bar_metric['จำนวนเงิน'].sum()
-                        unique_periods = df_bar_metric['sort_key'].nunique()
-                        avg_amt = total_amt / unique_periods if unique_periods > 0 else 0
-                        
-                        st.markdown(f"**💡 สรุปยอดรวมที่เลือก:** ทั้งหมด **฿{total_amt:,.2f}** | เฉลี่ย **฿{avg_amt:,.2f} / {time_unit_label}** (จาก {unique_periods} {time_unit_label})")
-
-                        if "เปรียบเทียบทุกประเภท" in bar_metric_mode:
-                            grouped_bar_data = df_bar_metric.groupby(['sort_key', 'ช่วงเวลา_str', 'ประเภท_clean'], as_index=False)['จำนวนเงิน'].sum()
-                            grouped_bar_data = grouped_bar_data.sort_values(by='sort_key')
-                            
-                            fig_bar = px.bar(
-                                grouped_bar_data, 
-                                x='ช่วงเวลา_str', 
-                                y='จำนวนเงิน', 
-                                color='ประเภท_clean',
-                                color_discrete_map=HONEY_POT_MAP,
-                                barmode='group',
-                                text='จำนวนเงิน'
-                            )
-                            fig_bar.update_traces(texttemplate='฿%{text:,.0f}', textposition='outside')
-                        else:
-                            stacked_data = df_bar_metric.groupby(['sort_key', 'ช่วงเวลา_str', 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
-                            stacked_data = stacked_data.sort_values(by=['sort_key', 'จำนวนเงิน'], ascending=[True, False])
-                            
-                            fig_bar = px.bar(
-                                stacked_data, 
-                                x='ช่วงเวลา_str', 
-                                y='จำนวนเงิน', 
-                                color='หมวดหมู่หลัก',
-                                color_discrete_sequence=SUB_CAT_PALETTE,
-                                hover_data={'หมวดหมู่ย่อย': True, 'รายละเอียด': True, 'sort_key': False},
-                                text='จำนวนเงิน'
-                            )
-                            fig_bar.update_traces(texttemplate='฿%{text:,.0f}', textposition='inside', insidetextanchor='middle')
-
-                            total_by_period = stacked_data.groupby(['sort_key', 'ช่วงเวลา_str'], as_index=False)['จำนวนเงิน'].sum()
-                            for _, r in total_by_period.iterrows():
-                                fig_bar.add_annotation(
-                                    x=r['ช่วงเวลา_str'],
-                                    y=r['จำนวนเงิน'],
-                                    text=f"<b>฿{r['จำนวนเงิน']:,.0f}</b>",
-                                    showarrow=False,
-                                    yshift=14,
-                                    font=dict(size=14, color='white')
-                                )
-
-                        fig_bar.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            xaxis=dict(showgrid=False, title=""),
-                            yaxis=dict(showgrid=True, gridcolor='rgba(128, 128, 128, 0.08)', title="จำนวนเงิน (THB)"),
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, title=""),
-                            margin=dict(t=30, b=0, l=0, r=0),
-                            uniformtext_minsize=9, uniformtext_mode='hide'
-                        )
-                        st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
-
-                        if "เปรียบเทียบทุกประเภท" not in bar_metric_mode:
-                            with st.expander(f"📋 ตารางรายละเอียดแจกแจงรายการ ({bar_metric_mode.split(' ')[1]})", expanded=False):
-                                st.caption("💡 ดูรายละเอียดและข้อความบันทึกย่อย (Note) ว่าใช้จ่าย/รับเงิน จากอะไรบ้างในแต่ละบิลครับ")
-                                show_exp_table = df_bar_metric[['วันที่', 'หมวดหมู่', 'รายละเอียด', 'จำนวนเงิน', 'กระเป๋า']].sort_values(by='วันที่', ascending=False)
-                                st.dataframe(show_exp_table, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("ไม่มีข้อมูลหลังจากการกรองหมวดหมู่ครับ")
-                else:
-                    st.info(f"ไม่มีข้อมูล '{bar_metric_mode.split(' ')[1]}' ในช่วงเวลานี้ครับ")
+                    st.info("ไม่มีข้อมูลหลังจากการกรองหมวดหมู่ครับ")
             else:
-                st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในรอบเดือนนี้ครับ")
+                st.info(f"ไม่มีข้อมูล '{bar_metric_mode.split(' ')[1]}' ในช่วงเวลานี้ครับ")
+        else:
+            st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในรอบเดือนนี้ครับ")
 
-            st.markdown("---")
-            
-            # 🔥 Expense Analysis
-            col_exp_title, col_exp_filter = st.columns([2, 1.5])
-            with col_exp_title:
-                st.markdown("<p class='quick-add-text'>Expense Analysis (วิเคราะห์สัดส่วนรายจ่ายองค์รวม)</p>", unsafe_allow_html=True)
-            with col_exp_filter:
-                if not expense_df.empty:
-                    raw_cats = expense_df['หมวดหมู่หลัก'].unique()
-                    all_main_cats = sorted([str(c).strip() for c in raw_cats if pd.notnull(c) and str(c).strip() != ""])
-                    selected_main_filter = st.multiselect("🔎 ติ๊กเลือกหมวดหมู่ที่ต้องการดู:", all_main_cats, default=all_main_cats)
-
-            col_chart1, col_chart2 = st.columns([1, 1.2])
+        st.markdown("---")
+        
+        # 🔥 Expense Analysis
+        col_exp_title, col_exp_filter = st.columns([2, 1.5])
+        with col_exp_title:
+            st.markdown("<p class='quick-add-text'>Expense Analysis (วิเคราะห์สัดส่วนรายจ่ายองค์รวม)</p>", unsafe_allow_html=True)
+        with col_exp_filter:
             if not expense_df.empty:
-                filtered_expense_df = expense_df[expense_df['หมวดหมู่หลัก'].isin(selected_main_filter)] if selected_main_filter else pd.DataFrame(columns=expense_df.columns)
-                all_pie_data = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
-                unique_main_cats = all_pie_data['หมวดหมู่หลัก'].tolist()
-                cat_color_map = {cat: SUB_CAT_PALETTE[i % len(SUB_CAT_PALETTE)] for i, cat in enumerate(unique_main_cats)}
-                
-                with col_chart1:
-                    if not filtered_expense_df.empty:
-                        pie_data = filtered_expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
-                        pie_data['จำนวนเงิน'] = pie_data['จำนวนเงิน'].abs() 
-                        
-                        fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.78, color='หมวดหมู่หลัก', color_discrete_map=cat_color_map)
-                        fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)), textfont=dict(family='Poppins', size=11))
-                        fig_pie.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, margin=dict(t=30, b=30, l=30, r=30))
-                        st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
-                    else:
-                        st.info("กรุณาติ๊กเลือกอย่างน้อย 1 หมวดหมู่")
-                        
-                with col_chart2:
-                    if not filtered_expense_df.empty:
-                        sub_data = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'], as_index=False)['จำนวนเงิน'].sum()
-                        sub_data['จำนวนเงิน'] = sub_data['จำนวนเงิน'].abs()
-                        
-                        if len(selected_main_filter) == len(all_main_cats):
-                            sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8)
-                        else:
-                            sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False)
-                        
-                        fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h', color_discrete_map=cat_color_map) 
-                        fig_bar.update_traces(marker_line_width=0, opacity=0.9, texttemplate='฿%{x:,.0f}', textposition='outside', textfont=dict(family='Poppins', size=11))
-                        fig_bar.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            xaxis=dict(showgrid=False, title="", zeroline=False, showticklabels=False),
-                            yaxis=dict(showgrid=False, title="", autorange="reversed", tickfont=dict(family='Poppins', size=12)),
-                            showlegend=False, margin=dict(t=10, b=10, l=0, r=30)
-                        )
-                        st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
-                
-                # 🔥 🪐 Deep Dive Infographic
-                st.markdown("---")
-                st.markdown("<p class='quick-add-text'>🪐 Deep Dive Infographic (เจาะลึกรายจ่ายถึงระดับบิล)</p>", unsafe_allow_html=True)
-                st.caption("💡 แผนภาพโครงสร้างต้นไม้ (Treemap) แสดงสัดส่วนรายจ่ายตั้งแต่ หมวดหมู่หลัก ➜ หมวดหมู่ย่อย ➜ รายละเอียดบิล (Note) ที่ซื้อไป")
-                
-                tm_df = filtered_expense_df[filtered_expense_df['จำนวนเงิน'] > 0].copy()
-                if not tm_df.empty:
-                    tm_df['รายละเอียด'] = tm_df['รายละเอียด'].replace(r'^\s*$', 'ไม่ระบุ Note', regex=True)
-                    tm_grouped = tm_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
-                    
-                    fig_tree = px.treemap(
-                        tm_grouped,
-                        path=[px.Constant("💸 รวมรายจ่าย (ที่เลือก)"), 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'],
-                        values='จำนวนเงิน',
-                        color='หมวดหมู่หลัก',
-                        color_discrete_map=cat_color_map
-                    )
-                    fig_tree.update_traces(
-                        textinfo="label+value+percent parent",
-                        texttemplate="<b>%{label}</b><br>฿%{value:,.0f}<br>(%{percentParent:.1%})",
-                        hovertemplate="<b>%{label}</b><br>ยอดรวม: ฿%{value:,.2f}<br>สัดส่วนในหมวดนี้: %{percentParent:.2%}<extra></extra>"
-                    )
-                    fig_tree.update_layout(
-                        margin=dict(t=30, l=0, r=0, b=0),
-                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
-                    )
-                    st.plotly_chart(fig_tree, use_container_width=True, theme="streamlit")
+                raw_cats = expense_df['หมวดหมู่หลัก'].unique()
+                all_main_cats = sorted([str(c).strip() for c in raw_cats if pd.notnull(c) and str(c).strip() != ""])
+                selected_main_filter = st.multiselect("🔎 ติ๊กเลือกหมวดหมู่ที่ต้องการดู:", all_main_cats, default=all_main_cats)
 
-            else:
-                st.info("ไม่มีข้อมูลรายจ่ายบันทึกไว้ในรอบเดือนนี้ครับ")
+        col_chart1, col_chart2 = st.columns([1, 1.2])
+        if not expense_df.empty:
+            filtered_expense_df = expense_df[expense_df['หมวดหมู่หลัก'].isin(selected_main_filter)] if selected_main_filter else pd.DataFrame(columns=expense_df.columns)
+            all_pie_data = expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
+            unique_main_cats = all_pie_data['หมวดหมู่หลัก'].tolist()
+            cat_color_map = {cat: SUB_CAT_PALETTE[i % len(SUB_CAT_PALETTE)] for i, cat in enumerate(unique_main_cats)}
+            
+            with col_chart1:
+                if not filtered_expense_df.empty:
+                    pie_data = filtered_expense_df.groupby('หมวดหมู่หลัก', as_index=False)['จำนวนเงิน'].sum()
+                    pie_data['จำนวนเงิน'] = pie_data['จำนวนเงิน'].abs() 
+                    
+                    fig_pie = px.pie(pie_data, values='จำนวนเงิน', names='หมวดหมู่หลัก', hole=0.78, color='หมวดหมู่หลัก', color_discrete_map=cat_color_map)
+                    fig_pie.update_traces(textposition='outside', textinfo='percent+label', marker=dict(line=dict(width=0)), textfont=dict(family='Poppins', size=11))
+                    fig_pie.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, margin=dict(t=30, b=30, l=30, r=30))
+                    st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
+                else:
+                    st.info("กรุณาติ๊กเลือกอย่างน้อย 1 หมวดหมู่")
+                    
+            with col_chart2:
+                if not filtered_expense_df.empty:
+                    sub_data = filtered_expense_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย'], as_index=False)['จำนวนเงิน'].sum()
+                    sub_data['จำนวนเงิน'] = sub_data['จำนวนเงิน'].abs()
+                    
+                    if len(selected_main_filter) == len(all_main_cats):
+                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False).head(8)
+                    else:
+                        sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False)
+                    
+                    fig_bar = px.bar(sub_data, x='จำนวนเงิน', y='หมวดหมู่ย่อย', color='หมวดหมู่หลัก', orientation='h', color_discrete_map=cat_color_map) 
+                    fig_bar.update_traces(marker_line_width=0, opacity=0.9, texttemplate='฿%{x:,.0f}', textposition='outside', textfont=dict(family='Poppins', size=11))
+                    fig_bar.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(showgrid=False, title="", zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, title="", autorange="reversed", tickfont=dict(family='Poppins', size=12)),
+                        showlegend=False, margin=dict(t=10, b=10, l=0, r=30)
+                    )
+                    st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
+            
+            # 🔥 🪐 Deep Dive Infographic
+            st.markdown("---")
+            st.markdown("<p class='quick-add-text'>🪐 Deep Dive Infographic (เจาะลึกรายจ่ายถึงระดับบิล)</p>", unsafe_allow_html=True)
+            st.caption("💡 แผนภาพโครงสร้างต้นไม้ (Treemap) แสดงสัดส่วนรายจ่ายตั้งแต่ หมวดหมู่หลัก ➜ หมวดหมู่ย่อย ➜ รายละเอียดบิล (Note) ที่ซื้อไป")
+            
+            tm_df = filtered_expense_df[filtered_expense_df['จำนวนเงิน'] > 0].copy()
+            if not tm_df.empty:
+                tm_df['รายละเอียด'] = tm_df['รายละเอียด'].replace(r'^\s*$', 'ไม่ระบุ Note', regex=True)
+                tm_grouped = tm_df.groupby(['หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'], as_index=False)['จำนวนเงิน'].sum()
+                
+                fig_tree = px.treemap(
+                    tm_grouped,
+                    path=[px.Constant("💸 รวมรายจ่าย (ที่เลือก)"), 'หมวดหมู่หลัก', 'หมวดหมู่ย่อย', 'รายละเอียด'],
+                    values='จำนวนเงิน',
+                    color='หมวดหมู่หลัก',
+                    color_discrete_map=cat_color_map
+                )
+                fig_tree.update_traces(
+                    textinfo="label+value+percent parent",
+                    texttemplate="<b>%{label}</b><br>฿%{value:,.0f}<br>(%{percentParent:.1%})",
+                    hovertemplate="<b>%{label}</b><br>ยอดรวม: ฿%{value:,.2f}<br>สัดส่วนในหมวดนี้: %{percentParent:.2%}<extra></extra>"
+                )
+                fig_tree.update_layout(
+                    margin=dict(t=30, l=0, r=0, b=0),
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
+                )
+                st.plotly_chart(fig_tree, use_container_width=True, theme="streamlit")
+
+        else:
+            st.info("ไม่มีข้อมูลรายจ่ายบันทึกไว้ในรอบเดือนนี้ครับ")
 
     # ==========================================
     # 🤝 Tab 3: ลูกหนี้ & หารบิล
@@ -1578,8 +1540,8 @@ else:
         total_paid = pd.to_numeric(paid_df['จำนวนเงิน'], errors='coerce').sum() if not paid_df.empty else 0.0
         
         m_d1, m_d2 = st.columns(2)
-        m_d1.markdown(f"<div class='metric-card'><div class='metric-title'>⏳ ยอดเงินที่คนอื่นยังติดอยู่ (รอคืน)</div><div class='metric-value' style='color:#ff3b30;'>฿{total_pending:,.2f}</div></div>", unsafe_allow_html=True)
-        m_d2.markdown(f"<div class='metric-card'><div class='metric-title'>✅ ได้รับคืนมาแล้วทั้งหมด</div><div class='metric-value' style='color:#34c759;'>฿{total_paid:,.2f}</div></div>", unsafe_allow_html=True)
+        m_d1.markdown(f"<div class='metric-card'><div class='metric-title'>⏳ ยอดเงินที่คนอื่นยังติดอยู่ (รอคืน)</div><div class='metric-value' style='color:#f9744b;'>฿{total_pending:,.2f}</div></div>", unsafe_allow_html=True)
+        m_d2.markdown(f"<div class='metric-card'><div class='metric-title'>✅ ได้รับคืนมาแล้วทั้งหมด</div><div class='metric-value' style='color:#2a9d8f;'>฿{total_paid:,.2f}</div></div>", unsafe_allow_html=True)
         
         st.markdown("---")
         
@@ -1638,7 +1600,7 @@ else:
                 df_debt, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_debt_v81"
+                key="editor_debt_v79"
             )
             if st.button("💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True):
                 debt_sheet.clear()
@@ -1660,10 +1622,10 @@ else:
         remaining_unallocated_sav = total_sav_now - total_allocated_sav
 
         g_m1, g_m2, g_m3 = st.columns(3)
-        g_m1.markdown(f"<div class='metric-card'><div class='metric-title'>💰 คลังเงินออมจริง (Savings Total)</div><div class='metric-value' style='color:#007aff;'>฿{total_sav_now:,.2f}</div></div>", unsafe_allow_html=True)
-        g_m2.markdown(f"<div class='metric-card'><div class='metric-title'>📦 จัดสรรเข้าเป้าหมายแล้ว</div><div class='metric-value' style='color:#34c759;'>฿{total_allocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
+        g_m1.markdown(f"<div class='metric-card'><div class='metric-title'>💰 คลังเงินออมจริง (Savings Total)</div><div class='metric-value' style='color:#457b9d;'>฿{total_sav_now:,.2f}</div></div>", unsafe_allow_html=True)
+        g_m2.markdown(f"<div class='metric-card'><div class='metric-title'>📦 จัดสรรเข้าเป้าหมายแล้ว</div><div class='metric-value' style='color:#2a9d8f;'>฿{total_allocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
         
-        rem_color = "#ff3b30" if remaining_unallocated_sav < 0 else "var(--text-color)"
+        rem_color = "#f9744b" if remaining_unallocated_sav < 0 else "#8ab17d"
         g_m3.markdown(f"<div class='metric-card'><div class='metric-title'>⚖️ เงินออมที่ยังไม่จัดสรร</div><div class='metric-value' style='color:{rem_color};'>฿{remaining_unallocated_sav:,.2f}</div></div>", unsafe_allow_html=True)
         
         st.markdown("---")
@@ -1692,11 +1654,11 @@ else:
                 pct = min(g_saved / g_target, 1.0)
                 pct_display = (g_saved / g_target) * 100
                 
-                if "ด่วนที่สุด" in g_pri: pri_color = "#ff2d55"
-                elif "สูง" in g_pri: pri_color = "#ff9500"
-                elif "ปานกลาง" in g_pri: pri_color = "#007aff"
-                elif "ต่ำ" in g_pri: pri_color = "#34c759"
-                else: pri_color = "#8e8e93"
+                if "ด่วนที่สุด" in g_pri: pri_color = "#d62828"
+                elif "สูง" in g_pri: pri_color = "#f9744b"
+                elif "ปานกลาง" in g_pri: pri_color = "#e9c46a"
+                elif "ต่ำ" in g_pri: pri_color = "#2a9d8f"
+                else: pri_color = "#457b9d"
                 
                 st.markdown(f"**{title_text}** <span style='font-size:12px; background-color:{pri_color}20; color:{pri_color}; padding:3px 10px; border-radius:12px; margin-left:10px; font-weight:600;'>{g_pri}</span><br><span style='font-size:14px;'>`฿{g_saved:,.2f} / ฿{g_target:,.2f} ({pct_display:.1f}%)`</span>", unsafe_allow_html=True)
                 st.progress(pct)
@@ -1739,7 +1701,7 @@ else:
                         required=True
                     )
                 },
-                key="editor_goals_v81"
+                key="editor_goals_v79"
             )
             
             if st.button("💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True):
@@ -1762,7 +1724,7 @@ else:
                 df_wallets, 
                 use_container_width=True, 
                 num_rows="dynamic", 
-                key="editor_wallets_v81"
+                key="editor_wallets_v79"
             )
             if st.button("💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True):
                 wallet_sheet.clear()
@@ -1784,7 +1746,7 @@ else:
 
         st.markdown("---")
         st.subheader("📁 Categories Editor")
-        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v81")
+        edited_cat = st.data_editor(cat_raw_df, use_container_width=True, num_rows="dynamic", key="editor_cat_v79")
         if st.button("💾 Save Categories", use_container_width=True):
             cat_sheet.clear()
             cat_sheet.update(range_name="A1", values=[edited_cat.columns.values.tolist()] + edited_cat.values.tolist())
@@ -1794,7 +1756,7 @@ else:
 
         st.markdown("---")
         st.subheader("⚡ Quick Adds Editor")
-        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v81")
+        edited_qa = st.data_editor(qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v79")
         if st.button("💾 Save Quick Adds", use_container_width=True):
             qa_sheet.clear()
             qa_sheet.update(range_name="A1", values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist())
@@ -1853,7 +1815,7 @@ else:
                     "กระเป๋า": st.column_config.SelectboxColumn("กระเป๋าเงิน", options=wallet_list, required=True),
                     "วันที่": st.column_config.TextColumn("วันที่และเวลา (YYYY-MM-DD HH:MM:SS)"),
                 },
-                key="editor_finance_v81"
+                key="editor_finance_v79"
             )
             if st.button("💾 Save Data to Cloud", use_container_width=True):
                 sheet.clear()
@@ -1918,10 +1880,10 @@ else:
         st.markdown("---")
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.markdown(f"<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน (EMI)</div><div class='metric-value' style='color:#ff3b30;'>฿{emi_amount:,.2f}</div></div>", unsafe_allow_html=True)
+        m1.markdown(f"<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน (EMI)</div><div class='metric-value' style='color:#f9744b;'>฿{emi_amount:,.2f}</div></div>", unsafe_allow_html=True)
         m2.markdown(f"<div class='metric-card'><div class='metric-title'>เงินต้นคงค้างระบบ</div><div class='metric-value'>฿{db_principal:,.0f}</div></div>", unsafe_allow_html=True)
-        m3.markdown(f"<div class='metric-card'><div class='metric-title'>ดอกเบี้ยทั้งสัญญา</div><div class='metric-value' style='color:#ff9500;'>฿{total_interest:,.2f}</div></div>", unsafe_allow_html=True)
-        m4.markdown(f"<div class='metric-card'><div class='metric-title'>รวมชำระตลอดสัญญา</div><div class='metric-value' style='color:#ff3b30;'>฿{total_payment:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='metric-card'><div class='metric-title'>ดอกเบี้ยทั้งสัญญา</div><div class='metric-value' style='color:#e9c46a;'>฿{total_interest:,.2f}</div></div>", unsafe_allow_html=True)
+        m4.markdown(f"<div class='metric-card'><div class='metric-title'>รวมชำระตลอดสัญญา</div><div class='metric-value' style='color:#f9744b;'>฿{total_payment:,.2f}</div></div>", unsafe_allow_html=True)
 
         st.markdown("<p class='quick-add-text'>🔄 ชำระค่างวดประจำเดือน</p>", unsafe_allow_html=True)
 
