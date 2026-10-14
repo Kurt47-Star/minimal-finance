@@ -52,19 +52,15 @@ st.markdown("""
     .metric-value { color: var(--text-color); font-size: 32px; font-weight: 700; margin: 0; line-height: 1.2; }
     .metric-currency { color: var(--text-color); opacity: 0.5; font-size: 14px; font-weight: 500; margin-top: 5px; }
     
-    .calib-box-match {
-        background-color: rgba(42, 157, 143, 0.12);
-        border: 1px solid #2a9d8f;
-        border-radius: 16px;
-        padding: 16px 20px;
-        margin-bottom: 16px;
-    }
-    .calib-box-diff {
-        background-color: rgba(249, 116, 75, 0.12);
-        border: 1px solid #f9744b;
-        border-radius: 16px;
-        padding: 16px 20px;
-        margin-bottom: 16px;
+    .recent-tx-card {
+        background-color: var(--secondary-background-color);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
     
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -75,6 +71,34 @@ st.title("Minimal Finance Pro")
 
 # 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย (UTC+7)
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
+
+# 🧹 ตัวแปรนับรอบการส่งฟอร์ม เพื่อล้างค่าช่องกรอกข้อมูล (Amount & Note) แบบ 100%
+if "form_ver" not in st.session_state:
+    st.session_state.form_ver = 0
+
+# 🎉 ระบบแสดง Pop-up แจ้งเตือนเมื่อบันทึกรายการสำเร็จ
+if hasattr(st, "dialog"):
+    @st.dialog("✅ บันทึกรายการสำเร็จ!")
+    def show_success_modal(info):
+        st.markdown(f"""
+        <div style='text-align: center; padding: 15px 0;'>
+            <div style='font-size: 54px; margin-bottom: 5px;'>🎉</div>
+            <h2 style='color: #2a9d8f; margin: 0;'>฿{info['amt']:,.2f}</h2>
+            <p style='font-size: 16px; font-weight: 600; margin: 8px 0 4px 0;'>{info['type']} • {info['cat']}</p>
+            <p style='font-size: 14px; opacity: 0.7; margin: 0;'>💳 กระเป๋า: {info['wallet']}</p>
+            {f"<p style='font-size: 13px; opacity: 0.6; margin-top: 6px;'>📝 Note: {info['note']}</p>" if info.get('note') else ""}
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("ตกลง (ปิดหน้าต่าง)", use_container_width=True):
+            st.rerun()
+
+if "tx_success_popup" in st.session_state:
+    info = st.session_state.pop("tx_success_popup")
+    if hasattr(st, "dialog"):
+        show_success_modal(info)
+    else:
+        st.toast(f"✅ บันทึกสำเร็จ: {info['cat']} (฿{info['amt']:,.2f})", icon="🎉")
+        st.success(f"🎉 **บันทึกรายการสำเร็จ!** | **{info['type']}** - {info['cat']} จำนวน **฿{info['amt']:,.2f}** ({info['wallet']})")
 
 # --- ระบบเชื่อมต่อคลาวด์ ---
 @st.cache_resource
@@ -87,7 +111,7 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
-# 🚀 ระบบ Smart Cache 
+# 🚀 ระบบ Smart Cache (เอาคำสั่ง resize(500) ที่ทำให้แถวหายออกถาวรแล้ว)
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
     try:
@@ -96,6 +120,7 @@ def get_google_sheets():
         return None, None, None, None, None, None, None, None, None
         
     sheet_main = sh.sheet1
+    
     try:
         sheet_qa = sh.worksheet("QuickAdds")
     except:
@@ -117,24 +142,6 @@ def get_google_sheets():
 
     try:
         sheet_cycle = sh.worksheet("Cycles")
-        try:
-            records_c = sheet_cycle.get_all_values()
-            has_sept = any("September" in str(r[0]) for r in records_c if len(r) > 0)
-            
-            for idx, r in enumerate(records_c):
-                if len(r) > 0 and "July 2026" in str(r[0]):
-                    sheet_cycle.update_cell(idx + 1, 2, "2026-06-25 00:00:00")
-                    sheet_cycle.update_cell(idx + 1, 3, "2026-07-31 23:59:59")
-                    sheet_cycle.update_cell(idx + 1, 4, "CLOSED")
-                elif len(r) > 0 and "August 2026" in str(r[0]):
-                    sheet_cycle.update_cell(idx + 1, 2, "2026-08-01 23:18:00")
-                    sheet_cycle.update_cell(idx + 1, 3, "2026-08-29 20:18:26")
-                    sheet_cycle.update_cell(idx + 1, 4, "CLOSED")
-            
-            if not has_sept:
-                sheet_cycle.append_row(["September 2026", "2026-08-29 20:18:27", "", "ACTIVE", 0.0, 0.0])
-        except Exception:
-            pass
     except:
         sheet_cycle = sh.add_worksheet(title="Cycles", rows="50", cols="10")
         sheet_cycle.append_row(["ชื่อรอบบัญชี", "เริ่มต้น", "สิ้นสุด", "สถานะ", "ยอดยกมา", "เงินจริงกรุงไทย"])
@@ -339,6 +346,134 @@ def calculate_savings_metrics(df_source):
 
 _, _, _, _, total_sav_now, outstanding_loan = calculate_savings_metrics(df)
 
+# 💰 ฟังก์ชันคำนวณยอดเงินคงเหลือทุกกระเป๋า (สำหรับแสดงทั้งหน้า Transaction และ Dashboard)
+def compute_wallet_balances(df_target, wallet_list_Input):
+    def is_transfer_row(row_type):
+        t = str(row_type).strip().lower()
+        return 'โอนย้าย' in t or 'transfer' in t
+
+    def is_income_type(row_type):
+        v = str(row_type).strip()
+        return bool('รายรับ' in v or 'ถอนเงินออม' in v or 'กู้เงินออม' in v or 'รับคืนเงินทดจ่าย' in v or 'ปรับยอดเพิ่ม' in v)
+
+    def is_expense_type(row_type):
+        v = str(row_type).strip()
+        return bool(('รายจ่าย' in v) or ('เงินลงทุน' in v) or ('เงินออม' in v and 'ถอน' not in v and 'กู้' not in v) or ('คืนเงินกู้ออม' in v) or ('เงินทดจ่าย' in v and 'รับคืน' not in v) or ('ปรับยอดลด' in v))
+
+    def safe_sum_by_mask(df_sub, mask_func):
+        if df_sub.empty or 'ประเภท' not in df_sub.columns:
+            return 0.0
+        mask = df_sub['ประเภท'].apply(mask_func).astype(bool)
+        return float(df_sub[mask]['จำนวนเงิน'].sum())
+
+    _, _, _, _, sav_target, _ = calculate_savings_metrics(df_target)
+    balances = {w: 0.0 for w in wallet_list_Input}
+    
+    for w in wallet_list_Input:
+        if "ออมสิน" in w:
+            df_w = df_target[df_target['กระเป๋า'] == w]
+            w_adj_in = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดเพิ่ม', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
+            w_adj_out = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดลด', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
+            balances[w] = sav_target + w_adj_in - w_adj_out
+        else:
+            df_w = df_target[df_target['กระเป๋า'] == w]
+            w_in = safe_sum_by_mask(df_w, is_income_type)
+            w_out = safe_sum_by_mask(df_w, is_expense_type)
+            balances[w] = w_in - w_out
+
+    if not df_target.empty and 'ประเภท' in df_target.columns:
+        mask_tr = df_target['ประเภท'].apply(is_transfer_row).astype(bool)
+        trans_df = df_target[mask_tr]
+        if not trans_df.empty:
+            for _, row in trans_df.iterrows():
+                amt = float(row['จำนวนเงิน'])
+                cat_str = str(row['หมวดหมู่']).strip().lower()
+                rec_wallet = str(row['กระเป๋า']).strip()
+                
+                to_w = None
+                for w in wallet_list_Input:
+                    w_clean = w.lower()
+                    if "truemoney" in w_clean or "ทรู" in w_clean or "true money" in w_clean:
+                        if "truemoney" in cat_str or "ทรู" in cat_str or "true money" in cat_str:
+                            to_w = w; break
+                    elif "กรุงไทย" in w_clean or "krungthai" in w_clean:
+                        if "กรุงไทย" in cat_str or "krungthai" in cat_str:
+                            to_w = w; break
+                    elif "ออมสิน" in w_clean or "aomsin" in w_clean:
+                        if "ออมสิน" in cat_str or "aomsin" in cat_str:
+                            to_w = w; break
+                    elif w_clean in cat_str:
+                        to_w = w; break
+                
+                if to_w and to_w in balances:
+                    balances[to_w] += amt
+                    from_w = rec_wallet
+                    if from_w == to_w:
+                        for w in wallet_list_Input:
+                            if "กรุงไทย" in w or "krungthai" in w.lower():
+                                from_w = w; break
+                    if from_w in balances and from_w != to_w:
+                        balances[from_w] -= amt
+                        
+    return balances, sum(balances.values())
+
+# คำนวณยอดเงินปัจจุบันเตรียมไว้โชว์หน้าแรก
+current_wallet_balances, current_net_wealth = compute_wallet_balances(df, wallet_list)
+
+# ฟังก์ชันสร้าง HTML แสดงการ์ดยอดเงินทุกกระเป๋า
+def render_wallet_cards_html(balances_dict, net_total):
+    card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
+    cards_html = ""
+    for idx, w in enumerate(wallet_list):
+        c = card_colors[idx % len(card_colors)]
+        bal = balances_dict.get(w, 0.0)
+        cards_html += f"<div style='flex: 1; min-width: 155px; background-color: {c}18; border: 1px solid {c}; padding: 12px 16px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.85;'>{w}</span><h3 style='margin: 4px 0 0 0; color: {c}; font-size: 22px;'>฿{bal:,.2f}</h3></div>"
+    cards_html += f"<div style='flex: 1; min-width: 165px; background-color: var(--secondary-background-color); border: 2px solid #2a9d8f; padding: 12px 16px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.9; font-weight: 600;'>💰 รวมทั้งหมด (Net Wealth)</span><h3 style='margin: 4px 0 0 0; font-size: 22px;'>฿{net_total:,.2f}</h3></div>"
+    return f"<div style='display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px;'>{cards_html}</div>"
+
+# ฟังก์ชันแสดงรายการย้อนหลัง 5 รายการล่าสุด
+def render_recent_5_transactions(df_source):
+    st.markdown("<p class='quick-add-text'>🕒 5 รายการล่าสุด (Recent Transactions)</p>", unsafe_allow_html=True)
+    if df_source.empty:
+        st.info("ยังไม่มีรายการบันทึกในระบบครับ")
+        return
+        
+    recent_df = df_source.sort_values(by="วันเวลา", ascending=False).head(5)
+    for _, r in recent_df.iterrows():
+        t_str = str(r['ประเภท']).strip()
+        amt_val = float(r['จำนวนเงิน'])
+        cat_str = str(r['หมวดหมู่']).strip()
+        note_str = str(r['รายละเอียด']).strip()
+        w_str = str(r['กระเป๋า']).strip()
+        dt_str = str(r['วันที่'])[:16]
+        
+        if any(k in t_str for k in ['รายรับ', 'ถอนเงินออม', 'กู้เงินออม', 'รับคืน', 'ปรับยอดเพิ่ม']):
+            color, sign, icon = "#2a9d8f", "+", "📥"
+        elif any(k in t_str for k in ['โอนย้าย']):
+            color, sign, icon = "#e9c46a", "🔄", "🔄"
+        elif any(k in t_str for k in ['ออม']):
+            color, sign, icon = "#457b9d", "-", "🐷"
+        elif any(k in t_str for k in ['ลงทุน']):
+            color, sign, icon = "#e9c46a", "-", "📈"
+        else:
+            color, sign, icon = "#f9744b", "-", "💸"
+            
+        note_html = f"<div style='font-size: 12px; opacity: 0.75; margin-top: 2px;'>📝 {note_str}</div>" if note_str and note_str != "nan" else ""
+        
+        st.markdown(f"""
+        <div class='recent-tx-card' style='border-left: 4px solid {color};'>
+            <div style='padding-right: 10px;'>
+                <div style='font-weight: 600; font-size: 14px;'>{icon} {cat_str}</div>
+                {note_html}
+                <div style='font-size: 11px; opacity: 0.55; margin-top: 4px;'>🕒 {dt_str} • {w_str}</div>
+            </div>
+            <div style='text-align: right; white-space: nowrap;'>
+                <div style='font-weight: 700; font-size: 16px; color: {color};'>{sign}฿{amt_val:,.2f}</div>
+                <div style='font-size: 10px; opacity: 0.5;'>{t_str}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 def get_goal_limit(goal_label, df_g, is_withdraw):
     raw_g = goal_label.split(" (")[0]
     if raw_g == "📦 คลังออมทั่วไป" or df_g.empty:
@@ -384,7 +519,6 @@ goal_options_list = ["📦 คลังออมทั่วไป (ไม่ร
 HONEY_POT_MAP = {"รายรับ": "#2a9d8f", "รายจ่าย": "#f9744b", "เงินออม": "#457b9d", "เงินลงทุน": "#e9c46a", "เงินสุทธิ": "#8ab17d"}
 SUB_CAT_PALETTE = ["#124d54", "#f9744b", "#e9c46a", "#2a9d8f", "#457b9d", "#f4a261", "#8ab17d", "#e76f51", "#d62828", "#003049", "#fcbf49"]
 
-# 🔥 อัลกอริทึม Hybrid Sync: สไลเดอร์ + ช่องกรอกตัวเลข
 def setup_balance_logic(mode, selected_goals, caps):
     state_key = f"{mode}_alloc_pcts"
     lock_prefix = f"lock_{mode}_"
@@ -466,16 +600,19 @@ def setup_balance_logic(mode, selected_goals, caps):
 
 # --- แถบเมนูด้านข้างสลับโหมด ---
 st.sidebar.markdown("## ⚙️ Settings")
+app_mode = st.sidebar.radio("Layout Mode:", ["📱 Mobile Mode", "💻 Desktop Mode"])
 if st.sidebar.button("🔄 ดึงข้อมูลสด (Clear Cache)", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
-app_mode = st.sidebar.radio("Layout Mode:", ["📱 Mobile Mode", "💻 Desktop Mode"])
 st.sidebar.markdown("---")
 
 # ==========================================
 # 📱 โหมดมือถือ (Mobile Mode)
 # ==========================================
 if app_mode == "📱 Mobile Mode":
+    # 💳 แสดงยอดเงินทุกกระเป๋าด้านบนสุดของหน้า Transaction
+    st.markdown(render_wallet_cards_html(current_wallet_balances, current_net_wealth), unsafe_allow_html=True)
+    
     st.markdown("<p class='quick-add-text'>Quick Actions</p>", unsafe_allow_html=True)
     if not qa_df.empty:
         for i, row in qa_df.iterrows():
@@ -484,7 +621,13 @@ if app_mode == "📱 Mobile Mode":
                 default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
                 sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", default_wallet])
                 fetch_main_data.clear()
-                st.toast("Success! ✨")
+                st.session_state["tx_success_popup"] = {
+                    "type": str(row['ประเภท']),
+                    "cat": str(row['หมวดหมู่']),
+                    "amt": float(row['จำนวนเงิน']),
+                    "wallet": default_wallet,
+                    "note": "บันทึกด่วน (Quick Action)"
+                }
                 st.rerun()
                 
     st.markdown("---")
@@ -550,7 +693,8 @@ if app_mode == "📱 Mobile Mode":
         else:
             chosen_time_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="mb_time_type")
 
-    amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key="mb_amount")
+    # ใช้ form_ver ในการเปลี่ยน Key เพื่อบังคับล้างช่องกรอกหลังกดบันทึก
+    amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key=f"mb_amount_{st.session_state.form_ver}")
     
     alloc_pcts_mb = {}
     if "เงินออม" in type_entry and mb_alloc_mode == "🔀 แบ่งหลายเป้าหมาย (Split)":
@@ -601,7 +745,7 @@ if app_mode == "📱 Mobile Mode":
         else:
             st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
             
-    note = st.text_input("Note", placeholder="Optional...", key="mb_note")
+    note = st.text_input("Note", placeholder="Optional...", key=f"mb_note_{st.session_state.form_ver}")
     
     if st.button("Save Transaction", use_container_width=True):
         if amount is None or amount <= 0:
@@ -626,6 +770,7 @@ if app_mode == "📱 Mobile Mode":
             final_time = datetime.datetime.now(TZ_TH).time() if time_shortcut == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_str, datetime.datetime.now(TZ_TH).time())
             combined_datetime = datetime.datetime.combine(chosen_date, final_time)
             
+            popup_cat_display = ""
             if final_type == "เงินออม":
                 if "เบิกออกมาใช้" in sav_action: 
                     final_type = "ถอนเงินออม"
@@ -634,6 +779,7 @@ if app_mode == "📱 Mobile Mode":
                     raw_goal_name = selected_goal_mb.split(" (")[0]
                     sub_cat_final = f"{action_name} [{raw_goal_name}]" if raw_goal_name != "📦 คลังออมทั่วไป" else action_name
                     full_category = f"{main_cat}: {sub_cat_final}"
+                    popup_cat_display = full_category
                     
                     if raw_goal_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
                         for g_idx, g_row in df_goals.iterrows():
@@ -649,6 +795,7 @@ if app_mode == "📱 Mobile Mode":
                     sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
                     
                 else: 
+                    popup_cat_display = f"{main_cat}: {action_name} (แบ่ง {len(alloc_pcts_mb)} เป้าหมาย)"
                     for g, pct in alloc_pcts_mb.items():
                         if pct > 0:
                             split_amt = float(amount) * (pct / 100.0)
@@ -671,12 +818,23 @@ if app_mode == "📱 Mobile Mode":
                             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, split_amt, split_note, wallet_entry])
             else:
                 full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
+                popup_cat_display = full_category
                 sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
             
-            if "mb_amount" in st.session_state: del st.session_state["mb_amount"]
-            if "mb_note" in st.session_state: del st.session_state["mb_note"]
+            # ล้างค่าในฟอร์ม 100% และตั้งค่า Pop-up แจ้งเตือน
+            st.session_state.form_ver += 1
+            st.session_state["tx_success_popup"] = {
+                "type": final_type,
+                "cat": popup_cat_display,
+                "amt": float(amount),
+                "wallet": wallet_entry,
+                "note": note
+            }
             fetch_main_data.clear()
             st.rerun()
+
+    st.markdown("---")
+    render_recent_5_transactions(df)
 
 # ==========================================
 # 💻 โหมดคอมพิวเตอร์ (Desktop Mode - 6 Tabs)
@@ -685,7 +843,10 @@ else:
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["✨ Transaction", "📊 Dashboard", "🤝 ลูกหนี้ & หารบิล", "🎯 Goals", "⚙️ Settings", "🏦 Loan Simulator"])
 
     with tab1:
-        col_main, col_space = st.columns([2, 1])
+        # 💳 แสดงจำนวนเงินทั้งหมดทุกกระเป๋าที่ด้านบนสุดของหน้า Transaction
+        st.markdown(render_wallet_cards_html(current_wallet_balances, current_net_wealth), unsafe_allow_html=True)
+        
+        col_main, col_recent = st.columns([1.8, 1.2], gap="large")
         with col_main:
             st.markdown("<p class='quick-add-text'>Quick Actions</p>", unsafe_allow_html=True)
             if not qa_df.empty:
@@ -697,7 +858,13 @@ else:
                         default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
                         sheet.append_row([now_str, str(row['ประเภท']), str(row['หมวดหมู่']), float(row['จำนวนเงิน']), "บันทึกด่วน", default_wallet])
                         fetch_main_data.clear()
-                        st.toast("Success! ✨")
+                        st.session_state["tx_success_popup"] = {
+                            "type": str(row['ประเภท']),
+                            "cat": str(row['หมวดหมู่']),
+                            "amt": float(row['จำนวนเงิน']),
+                            "wallet": default_wallet,
+                            "note": "บันทึกด่วน (Quick Action)"
+                        }
                         st.rerun()
                         
             st.markdown("---")
@@ -769,7 +936,8 @@ else:
                 else:
                     chosen_time_dt_str = st.text_input("⏰ พิมพ์เวลา (เช่น 22:34:23)", value=datetime.datetime.now(TZ_TH).strftime('%H:%M:%S'), placeholder="HH:MM:SS", key="dt_time_type")
 
-            amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key="dt_amount")
+            # ใช้ form_ver ในการเปลี่ยน Key เพื่อบังคับล้างช่องกรอกหลังกดบันทึก
+            amount = st.number_input("Amount (THB)", min_value=0.0, step=50.0, format="%.2f", value=None, placeholder="0.00", key=f"dt_amount_{st.session_state.form_ver}")
             
             alloc_pcts_dt = {}
             if "เงินออม" in type_entry and dt_alloc_mode == "🔀 แบ่งหลายเป้าหมาย (Split)":
@@ -822,7 +990,7 @@ else:
                 else:
                     st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
                     
-            note = st.text_input("Note", placeholder="...", key="dt_note")
+            note = st.text_input("Note", placeholder="...", key=f"dt_note_{st.session_state.form_ver}")
             
             if st.button("Save Transaction", use_container_width=True):
                 if amount is None or amount <= 0:
@@ -847,6 +1015,7 @@ else:
                     final_time_dt = datetime.datetime.now(TZ_TH).time() if time_shortcut_dt == "⏱️ เวลาปัจจุบัน" else parse_custom_time(chosen_time_dt_str, datetime.datetime.now(TZ_TH).time())
                     combined_datetime = datetime.datetime.combine(chosen_date_dt, final_time_dt)
                     
+                    popup_cat_display = ""
                     if final_type == "เงินออม":
                         if "เบิกออกมาใช้" in sav_action: 
                             final_type = "ถอนเงินออม"
@@ -855,6 +1024,7 @@ else:
                             raw_goal_name = selected_goal_dt.split(" (")[0]
                             sub_cat_final = f"{action_name} [{raw_goal_name}]" if raw_goal_name != "📦 คลังออมทั่วไป" else action_name
                             full_category = f"{main_cat}: {sub_cat_final}"
+                            popup_cat_display = full_category
                             
                             if raw_goal_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
                                 for g_idx, g_row in df_goals.iterrows():
@@ -870,6 +1040,7 @@ else:
                             sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
                             
                         else: 
+                            popup_cat_display = f"{main_cat}: {action_name} (แบ่ง {len(alloc_pcts_dt)} เป้าหมาย)"
                             for g, pct in alloc_pcts_dt.items():
                                 if pct > 0:
                                     split_amt = float(amount) * (pct / 100.0)
@@ -892,12 +1063,24 @@ else:
                                     sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, split_amt, split_note, wallet_entry])
                     else:
                         full_category = f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
+                        popup_cat_display = full_category
                         sheet.append_row([combined_datetime.strftime('%Y-%m-%d %H:%M:%S'), final_type, full_category, amount, note, wallet_entry])
                     
-                    if "dt_amount" in st.session_state: del st.session_state["dt_amount"]
-                    if "dt_note" in st.session_state: del st.session_state["dt_note"]
+                    # ล้างค่าในฟอร์ม 100% และตั้งค่า Pop-up แจ้งเตือน
+                    st.session_state.form_ver += 1
+                    st.session_state["tx_success_popup"] = {
+                        "type": final_type,
+                        "cat": popup_cat_display,
+                        "amt": float(amount),
+                        "wallet": wallet_entry,
+                        "note": note
+                    }
                     fetch_main_data.clear()
                     st.rerun()
+
+        # 📋 คอลัมน์ด้านขวา: แสดง 5 รายการย้อนหลังที่เพิ่งบันทึก
+        with col_recent:
+            render_recent_5_transactions(df)
 
     # ==========================================
     # 📊 Tab 2: Dashboard
@@ -983,89 +1166,17 @@ else:
         exp = float(df_cycle[exp_mask]['จำนวนเงิน'].sum())
         expense_df = df_cycle[exp_mask].copy()
 
-        def is_transfer_row(row_type):
-            t = str(row_type).strip().lower()
-            return 'โอนย้าย' in t or 'transfer' in t
-
-        def is_income_type(row_type):
-            v = str(row_type).strip()
-            return bool('รายรับ' in v or 'ถอนเงินออม' in v or 'กู้เงินออม' in v or 'รับคืนเงินทดจ่าย' in v or 'ปรับยอดเพิ่ม' in v)
-
-        def is_expense_type(row_type):
-            v = str(row_type).strip()
-            return bool(('รายจ่าย' in v) or ('เงินลงทุน' in v) or ('เงินออม' in v and 'ถอน' not in v and 'กู้' not in v) or ('คืนเงินกู้ออม' in v) or ('เงินทดจ่าย' in v and 'รับคืน' not in v) or ('ปรับยอดลด' in v))
-
-        def safe_sum_by_mask(df_sub, mask_func):
-            if df_sub.empty or 'ประเภท' not in df_sub.columns:
-                return 0.0
-            mask = df_sub['ประเภท'].apply(mask_func).astype(bool)
-            return float(df_sub[mask]['จำนวนเงิน'].sum())
-
-        wallet_balances = {w: 0.0 for w in wallet_list}
-        for w in wallet_list:
-            if "ออมสิน" in w:
-                df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
-                w_adj_in = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดเพิ่ม', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
-                w_adj_out = float(df_w[df_w['ประเภท'].astype(str).str.contains('ปรับยอดลด', na=False)]['จำนวนเงิน'].sum() if not df_w.empty else 0.0)
-                wallet_balances[w] = total_sav_now + w_adj_in - w_adj_out
-            else:
-                df_w = df_cumulative[df_cumulative['กระเป๋า'] == w]
-                w_in = safe_sum_by_mask(df_w, is_income_type)
-                w_out = safe_sum_by_mask(df_w, is_expense_type)
-                wallet_balances[w] = w_in - w_out
-        
-        if not df_cumulative.empty and 'ประเภท' in df_cumulative.columns:
-            mask_tr = df_cumulative['ประเภท'].apply(is_transfer_row).astype(bool)
-            trans_df = df_cumulative[mask_tr]
-            if not trans_df.empty:
-                for _, row in trans_df.iterrows():
-                    amt = float(row['จำนวนเงิน'])
-                    cat_str = str(row['หมวดหมู่']).strip().lower()
-                    rec_wallet = str(row['กระเป๋า']).strip()
-                    
-                    to_w = None
-                    for w in wallet_list:
-                        w_clean = w.lower()
-                        if "truemoney" in w_clean or "ทรู" in w_clean or "true money" in w_clean:
-                            if "truemoney" in cat_str or "ทรู" in cat_str or "true money" in cat_str:
-                                to_w = w; break
-                        elif "กรุงไทย" in w_clean or "krungthai" in w_clean:
-                            if "กรุงไทย" in cat_str or "krungthai" in cat_str:
-                                to_w = w; break
-                        elif "ออมสิน" in w_clean or "aomsin" in w_clean:
-                            if "ออมสิน" in cat_str or "aomsin" in cat_str:
-                                to_w = w; break
-                        elif w_clean in cat_str:
-                            to_w = w; break
-                    
-                    if to_w and to_w in wallet_balances:
-                        wallet_balances[to_w] += amt
-                        from_w = rec_wallet
-                        if from_w == to_w:
-                            for w in wallet_list:
-                                if "กรุงไทย" in w or "krungthai" in w.lower():
-                                    from_w = w; break
-                        if from_w in wallet_balances and from_w != to_w:
-                            wallet_balances[from_w] -= amt
-
-        net_wealth_total = sum(wallet_balances.values())
+        wallet_balances, net_wealth_total = compute_wallet_balances(df_cumulative, wallet_list)
 
         # --- 💳 แสดงการ์ดธนาคาร ---
-        card_colors = ["#2a9d8f", "#f4a261", "#457b9d", "#e9c46a", "#8ab17d", "#e76f51", "#f9744b"]
-        cards_html = ""
-        for idx, w in enumerate(wallet_list):
-            c = card_colors[idx % len(card_colors)]
-            bal = wallet_balances[w]
-            cards_html += f"<div style='flex: 1; min-width: 170px; background-color: {c}18; border: 1px solid {c}; padding: 12px 18px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.8;'>{w}</span><h3 style='margin: 0; color: {c};'>฿{bal:,.2f}</h3></div>"
-        cards_html += f"<div style='flex: 1; min-width: 170px; background-color: var(--secondary-background-color); border: 1px solid var(--border-color); padding: 12px 18px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.8;'>💰 รวมเงินทั้งหมด (Net Wealth)</span><h3 style='margin: 0;'>฿{net_wealth_total:,.2f}</h3></div>"
-        st.markdown(f"<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;'>{cards_html}</div>", unsafe_allow_html=True)
+        st.markdown(render_wallet_cards_html(wallet_balances, net_wealth_total), unsafe_allow_html=True)
 
         primary_wallet_name = wallet_list[0] if wallet_list else "ธนาคารหลัก"
         primary_wallet_bal = wallet_balances.get(primary_wallet_name, 0.0)
 
         # 🔥 กล่องคาลิเบรท
         if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
-            with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=True):
+            with st.expander(f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) — ปรับยอดให้ตรงตามแอปธนาคารทันที", expanded=False):
                 st.caption("💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้ แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100% ทันทีโดยไม่กระทบสถิติรายจ่าย!")
                 
                 with st.form("multi_wallet_calibrate_form", clear_on_submit=False):
@@ -1107,7 +1218,7 @@ else:
         m2.markdown(f"<div class='metric-card'><div class='metric-title'>Income (รอบนี้) <span style='color:#2a9d8f;'>↗</span></div><div class='metric-value'>฿{inc:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
         m3.markdown(f"<div class='metric-card'><div class='metric-title'>Expenses <span style='color:#f9744b;'>↘</span></div><div class='metric-value'>฿{exp:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
         
-        loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หหนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
+        loan_badge = f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️ หนี้ค้าง: ฿{outstanding_loan:,.0f}</div>" if outstanding_loan > 0 else ""
         m4.markdown(f"<div class='metric-card'><div class='metric-title'>Savings <span style='color:#457b9d;'>↗</span></div><div class='metric-value'>฿{sav_flow:,.0f}</div><div style='font-size:11px;color:#457b9d;font-weight:600;margin-top:2px;'>🏦 คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>", unsafe_allow_html=True)
         m5.markdown(f"<div class='metric-card'><div class='metric-title'>Investments <span style='color:#e9c46a;'>↗</span></div><div class='metric-value'>฿{inv:,.0f}</div><div class='metric-currency'>THB</div></div>", unsafe_allow_html=True)
         
