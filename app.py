@@ -97,11 +97,6 @@ def get_google_sheets():
         
     sheet_main = sh.sheet1
     try:
-        sheet_main.resize(rows=500, cols=8)
-    except Exception:
-        pass
-    
-    try:
         sheet_qa = sh.worksheet("QuickAdds")
     except:
         sheet_qa = sh.add_worksheet(title="QuickAdds", rows="50", cols="5")
