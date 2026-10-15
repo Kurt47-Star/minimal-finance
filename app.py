@@ -72,19 +72,28 @@ TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 if "form_ver" not in st.session_state:
   st.session_state.form_ver = 0
 
-# 🎉 ระบบแสดง Pop-up แจ้งเตือนเมื่อบันทึกรายการสำเร็จ
+# 🎉 ระบบแสดง Pop-up แจ้งเตือนเมื่อบันทึกรายการสำเร็จ (แก้ไข f-string syntax เรียบร้อย)
 if hasattr(st, "dialog"):
 
   @st.dialog("✅ บันทึกรายการสำเร็จ!")
   def show_success_modal(info):
+    note_val = info.get("note", "")
+    note_html = (
+        f"<p style='font-size: 13px; opacity: 0.6; margin-top: 6px;'>📝 Note:"
+        f" {note_val}</p>"
+        if note_val
+        else ""
+    )
     st.markdown(
-        f"<div style='text-align: center; padding: 15px 0;'><div"
-        f" style='font-size: 54px; margin-bottom: 5px;'>🎉</div><h2"
-        f" style='color: #2a9d8f; margin: 0;'>฿{info['amt']:,.2f}</h2><p"
-        f" style='font-size: 16px; font-weight: 600; margin: 8px 0 4px"
-        f" 0;'>{info['type']} • {info['cat']}</p><p style='font-size: 14px;"
-        f" opacity: 0.7; margin: 0;'>💳 กระเป๋า:"
-        f" {info['wallet']}</p>{f'<p style=\"font-size: 13px; opacity: 0.6; margin-top: 6px;\">📝 Note: {info[\"note\"]}</p>' if info.get('note') else ''}</div>",
+        f"""
+        <div style='text-align: center; padding: 15px 0;'>
+            <div style='font-size: 54px; margin-bottom: 5px;'>🎉</div>
+            <h2 style='color: #2a9d8f; margin: 0;'>฿{info['amt']:,.2f}</h2>
+            <p style='font-size: 16px; font-weight: 600; margin: 8px 0 4px 0;'>{info['type']} • {info['cat']}</p>
+            <p style='font-size: 14px; opacity: 0.7; margin: 0;'>💳 กระเป๋า: {info['wallet']}</p>
+            {note_html}
+        </div>
+        """,
         unsafe_allow_html=True,
     )
     if st.button("ตกลง (ปิดหน้าต่าง)", use_container_width=True):
@@ -677,7 +686,7 @@ def render_wallet_cards_html(balances_dict, net_total):
   return f"<div style='display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px;'>{cards_html}</div>"
 
 
-# ฟังก์ชันแสดง 5 รายการล่าสุด (แก้ไขไม่ให้มีข้อความโค้ดหลุด)
+# ฟังก์ชันแสดง 5 รายการล่าสุด (ใช้ container ของ Streamlit ป้องกันข้อความโค้ดหลุด)
 def render_recent_5_transactions(df_source):
   st.markdown(
       "<p class='quick-add-text'>🕒 5 รายการล่าสุด (Recent Transactions)</p>",
