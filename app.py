@@ -72,7 +72,7 @@ TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 if "form_ver" not in st.session_state:
   st.session_state.form_ver = 0
 
-# 🎉 ระบบแสดง Pop-up แจ้งเตือนเมื่อบันทึกรายการสำเร็จ (แก้ไข f-string syntax เรียบร้อย)
+# 🎉 ระบบแสดง Pop-up แจ้งเตือนเมื่อบันทึกรายการสำเร็จ
 if hasattr(st, "dialog"):
 
   @st.dialog("✅ บันทึกรายการสำเร็จ!")
@@ -128,7 +128,7 @@ client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
 
-# 🚀 ระบบ Smart Cache (ไม่มีคำสั่ง resize ตัดแถวแล้ว)
+# 🚀 ระบบ Smart Cache
 @st.cache_resource(ttl=3600)
 def get_google_sheets():
   try:
@@ -437,6 +437,34 @@ qa_df = (
 )
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
+# 🔀 ฟังก์ชันจัดเรียง Categories & Sub-categories แบบฉลาด
+def get_sorted_categories(df_source, raw_options, sort_by="🔤 ตัวอักษร", is_sub=False, parent_cat=None):
+    if not raw_options:
+        return ["ทั่วไป"]
+        
+    if sort_by == "🔤 ตัวอักษร":
+        return sorted(list(raw_options))
+        
+    df_filtered = df_source.copy()
+    col_target = 'หมวดหมู่ย่อย' if is_sub else 'หมวดหมู่หลัก'
+    
+    if is_sub and parent_cat:
+        df_filtered = df_filtered[df_filtered['หมวดหมู่หลัก'] == parent_cat]
+        
+    if df_filtered.empty:
+        return sorted(list(raw_options))
+        
+    if sort_by == "🔥 เยอะที่สุด":
+        counts = df_filtered[col_target].value_counts()
+        return sorted(list(raw_options), key=lambda x: counts.get(x, 0), reverse=True)
+        
+    elif sort_by == "🕒 ล่าสุด":
+        last_times = df_filtered.groupby(col_target)['วันเวลา'].max()
+        min_time = pd.Timestamp.min
+        return sorted(list(raw_options), key=lambda x: last_times.get(x, min_time), reverse=True)
+
+    return sorted(list(raw_options))
+
 budgets_data = fetch_budgets()
 df_budgets = (
     pd.DataFrame(budgets_data)
@@ -686,7 +714,7 @@ def render_wallet_cards_html(balances_dict, net_total):
   return f"<div style='display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px;'>{cards_html}</div>"
 
 
-# ฟังก์ชันแสดง 5 รายการล่าสุด (ใช้ container ของ Streamlit ป้องกันข้อความโค้ดหลุด)
+# ฟังก์ชันแสดง 5 รายการล่าสุด
 def render_recent_5_transactions(df_source):
   st.markdown(
       "<p class='quick-add-text'>🕒 5 รายการล่าสุด (Recent Transactions)</p>",
@@ -1056,17 +1084,15 @@ if app_mode == "📱 Mobile Mode":
       action_name = sav_action.split(" ")[1]
       sub_cat = action_name
     else:
-      main_options = (
-          sorted(list(SUB_CATEGORIES[type_entry].keys()))
-          if SUB_CATEGORIES.get(type_entry)
-          else ["ทั่วไป"]
-      )
+      # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่
+      sort_choice_mb = st.radio("เรียงลำดับหมวดหมู่:", ["🔤 ตัวอักษร", "🕒 ล่าสุด", "🔥 เยอะที่สุด"], horizontal=True, key="mb_cat_sort")
+      
+      raw_main = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
+      main_options = get_sorted_categories(df, raw_main, sort_choice_mb, is_sub=False)
       main_cat = st.selectbox("Category", main_options, key="mb_main")
-      sub_options = (
-          sorted(SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]))
-          if main_cat in SUB_CATEGORIES.get(type_entry, {})
-          else ["ทั่วไป"]
-      )
+      
+      raw_sub = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
+      sub_options = get_sorted_categories(df, raw_sub, sort_choice_mb, is_sub=True, parent_cat=main_cat)
       sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
 
   c_md1, c_mt1 = st.columns(2)
@@ -1511,20 +1537,17 @@ else:
         action_name = sav_action.split(" ")[1]
         sub_cat = action_name
       else:
+        # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่
+        sort_choice_dt = st.radio("เรียงลำดับหมวดหมู่:", ["🔤 ตัวอักษร", "🕒 ล่าสุด", "🔥 เยอะที่สุด"], horizontal=True, key="dt_cat_sort")
+        
         c_main, c_sub = st.columns(2)
         with c_main:
-          main_options = (
-              sorted(list(SUB_CATEGORIES[type_entry].keys()))
-              if SUB_CATEGORIES.get(type_entry)
-              else ["ทั่วไป"]
-          )
+          raw_main_dt = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
+          main_options = get_sorted_categories(df, raw_main_dt, sort_choice_dt, is_sub=False)
           main_cat = st.selectbox("Category", main_options, key="dt_main")
         with c_sub:
-          sub_options = (
-              sorted(SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]))
-              if main_cat in SUB_CATEGORIES.get(type_entry, {})
-              else ["ทั่วไป"]
-          )
+          raw_sub_dt = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
+          sub_options = get_sorted_categories(df, raw_sub_dt, sort_choice_dt, is_sub=True, parent_cat=main_cat)
           sub_cat = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
       c_date_tool, c_time_tool = st.columns([1, 1])
