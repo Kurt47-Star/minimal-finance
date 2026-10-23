@@ -68,7 +68,7 @@ st.title("Minimal Finance Pro")
 # 🌍 บังคับโซนเวลาแอปให้อยู่ในเขตประเทศไทย (UTC+7)
 TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 
-# 🧹 ตัวแปรนับรอบการส่งฟอร์ม เพื่อล้างค่าช่องกรอกข้อมูล (Amount & Note) แบบ 100%
+# 🧹 ตัวแปรนับรอบการส่งฟอร์ม เพื่อล้างค่าช่องกรอกข้อมูล
 if "form_ver" not in st.session_state:
   st.session_state.form_ver = 0
 
@@ -469,6 +469,49 @@ def get_sorted_categories(df_source, raw_options, sort_by="🔤 ตัวอั�
         return sorted(list(raw_options), key=lambda x: last_times.get(x, min_time), reverse=True)
 
     return sorted(list(raw_options))
+
+# 💡 ฟังก์ชันวิเคราะห์ประวัติโน้ตเก่า เพื่อทำนายคำแนะนำตามหมวดหมู่ (Smart Predictive Notes)
+def get_smart_note_suggestions(df_source, main_cat, sub_cat, limit=12):
+    if df_source.empty or 'รายละเอียด' not in df_source.columns:
+        return []
+    
+    valid = df_source.dropna(subset=['รายละเอียด']).copy()
+    valid['รายละเอียด'] = valid['รายละเอียด'].astype(str).str.strip()
+    valid = valid[(valid['รายละเอียด'] != '') & (valid['รายละเอียด'] != 'nan') & (valid['รายละเอียด'] != 'บันทึกด่วน')]
+    
+    if valid.empty:
+        return []
+        
+    exact_match = valid[(valid['หมวดหมู่หลัก'] == main_cat) & (valid['หมวดหมู่ย่อย'] == sub_cat)]
+    main_match = valid[valid['หมวดหมู่หลัก'] == main_cat]
+    
+    suggestions = []
+    
+    def rank_notes(df_sub):
+        if df_sub.empty:
+            return []
+        grp = df_sub.groupby('รายละเอียด').agg(
+            count=('วันที่', 'count'),
+            latest=('วันเวลา', 'max')
+        ).sort_values(by=['count', 'latest'], ascending=[False, False])
+        return list(grp.index)
+    
+    # อันดับ 1: โน้ตที่เคยบันทึกใน Sub-category นี้เป๊ะๆ
+    for n in rank_notes(exact_match):
+        if n not in suggestions:
+            suggestions.append(n)
+            
+    # อันดับ 2: โน้ตในหมวดหมู่หลักเดียวกัน
+    for n in rank_notes(main_match):
+        if n not in suggestions:
+            suggestions.append(n)
+            
+    # อันดับ 3: โน้ตที่บันทึกบ่อยทั่วทั้งแอป
+    for n in rank_notes(valid):
+        if n not in suggestions:
+            suggestions.append(n)
+            
+    return suggestions[:limit]
 
 budgets_data = fetch_budgets()
 df_budgets = (
@@ -1011,6 +1054,9 @@ if app_mode == "📱 Mobile Mode":
       ["💸 รายจ่าย", "📥 รายรับ", "🔄 โอนย้ายกระเป๋า", "🐷 เงินออม", "📈 เงินลงทุน"],
   )
 
+  main_cat = "ทั่วไป"
+  sub_cat = "ทั่วไป"
+
   if "โอนย้ายกระเป๋า" in type_entry:
     c_tr1, c_tr2 = st.columns(2)
     with c_tr1:
@@ -1089,7 +1135,6 @@ if app_mode == "📱 Mobile Mode":
       action_name = sav_action.split(" ")[1]
       sub_cat = action_name
     else:
-      # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่แบบจำค่าใน URL
       def on_sort_change_mb():
         st.query_params["cat_sort"] = st.session_state.mb_cat_sort
 
@@ -1243,10 +1288,41 @@ if app_mode == "📱 Mobile Mode":
     else:
       st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
 
+  # 💡 ระบบวิเคราะห์โน้ตแนะนำตามหมวดหมู่ (Smart Predictive Notes)
+  smart_note_suggestions_mb = get_smart_note_suggestions(df, main_cat, sub_cat)
+  note_input_key_mb = f"mb_note_{st.session_state.form_ver}"
+  if note_input_key_mb not in st.session_state:
+      st.session_state[note_input_key_mb] = ""
+
+  if smart_note_suggestions_mb:
+      st.caption("💡 แนะนำจากที่เคยพิมพ์ในหมวดนี้ (พิมพ์ค้นหาหรือคลิกเลือกได้เลย):")
+      
+      def on_select_suggested_note_mb():
+          chosen = st.session_state[f"mb_note_picker_{st.session_state.form_ver}"]
+          if chosen and chosen != "(พิมพ์ระบุเองด้านล่าง)":
+              st.session_state[note_input_key_mb] = chosen
+              
+      note_options_mb = ["(พิมพ์ระบุเองด้านล่าง)"] + smart_note_suggestions_mb
+      st.selectbox(
+          "ค้นหาคำจากประวัติ:",
+          note_options_mb,
+          key=f"mb_note_picker_{st.session_state.form_ver}",
+          on_change=on_select_suggested_note_mb,
+          label_visibility="collapsed"
+      )
+      
+      # ปุ่มชิปด่วนสำหรับคำที่ใช้บ่อย 4 คำแรก
+      top_chips_mb = smart_note_suggestions_mb[:4]
+      chip_cols_mb = st.columns(len(top_chips_mb))
+      for idx_c, chip_text in enumerate(top_chips_mb):
+          if chip_cols_mb[idx_c].button(f"⚡ {chip_text}", key=f"mb_chip_{idx_c}_{st.session_state.form_ver}", use_container_width=True):
+              st.session_state[note_input_key_mb] = chip_text
+              st.rerun()
+
   note = st.text_input(
-      "Note",
-      placeholder="Optional...",
-      key=f"mb_note_{st.session_state.form_ver}",
+      "Note (รายละเอียด)",
+      placeholder="พิมพ์รายละเอียด หรือเลือกจากคำแนะนำด้านบน...",
+      key=note_input_key_mb,
   )
 
   if st.button("Save Transaction", use_container_width=True):
@@ -1475,6 +1551,9 @@ else:
               key="dt_wallet_select",
           )
 
+      main_cat_dt = "ทั่วไป"
+      sub_cat_dt = "ทั่วไป"
+
       if "โอนย้ายกระเป๋า" in type_entry:
         c_tf1, c_tf2 = st.columns(2)
         with c_tf1:
@@ -1491,8 +1570,8 @@ else:
               "โอนเข้ากระเป๋า (To):", to_options, key="dt_tr_to"
           )
         wallet_entry = from_wallet
-        main_cat = "โอนย้ายระหว่างกระเป๋า"
-        sub_cat = f"เข้า {to_wallet}"
+        main_cat_dt = "โอนย้ายระหว่างกระเป๋า"
+        sub_cat_dt = f"เข้า {to_wallet}"
       elif "เงินออม" in type_entry:
         sav_action = st.radio(
             "การดำเนินการเงินออม:",
@@ -1548,11 +1627,10 @@ else:
                 """,
             unsafe_allow_html=True,
         )
-        main_cat = "บริหารเงินออม"
+        main_cat_dt = "บริหารเงินออม"
         action_name = sav_action.split(" ")[1]
-        sub_cat = action_name
+        sub_cat_dt = action_name
       else:
-        # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่แบบจำค่าใน URL
         def on_sort_change_dt():
           st.query_params["cat_sort"] = st.session_state.dt_cat_sort
 
@@ -1569,11 +1647,11 @@ else:
         with c_main:
           raw_main_dt = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
           main_options = get_sorted_categories(df, raw_main_dt, sort_choice_dt, is_sub=False)
-          main_cat = st.selectbox("Category", main_options, key="dt_main")
+          main_cat_dt = st.selectbox("Category", main_options, key="dt_main")
         with c_sub:
-          raw_sub_dt = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
-          sub_options = get_sorted_categories(df, raw_sub_dt, sort_choice_dt, is_sub=True, parent_cat=main_cat)
-          sub_cat = st.selectbox("Sub-category", sub_options, key="dt_sub")
+          raw_sub_dt = SUB_CATEGORIES[type_entry].get(main_cat_dt, ["ทั่วไป"]) if main_cat_dt in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
+          sub_options = get_sorted_categories(df, raw_sub_dt, sort_choice_dt, is_sub=True, parent_cat=main_cat_dt)
+          sub_cat_dt = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
       c_date_tool, c_time_tool = st.columns([1, 1])
       with c_date_tool:
@@ -1719,8 +1797,40 @@ else:
         else:
           st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
 
+      # 💡 ระบบวิเคราะห์โน้ตแนะนำตามหมวดหมู่ (Desktop Mode)
+      smart_note_suggestions_dt = get_smart_note_suggestions(df, main_cat_dt, sub_cat_dt)
+      note_input_key_dt = f"dt_note_{st.session_state.form_ver}"
+      if note_input_key_dt not in st.session_state:
+          st.session_state[note_input_key_dt] = ""
+
+      if smart_note_suggestions_dt:
+          st.caption("💡 แนะนำจากที่เคยพิมพ์ในหมวดนี้ (พิมพ์ค้นหาหรือคลิกเลือกได้เลย):")
+          
+          def on_select_suggested_note_dt():
+              chosen = st.session_state[f"dt_note_picker_{st.session_state.form_ver}"]
+              if chosen and chosen != "(พิมพ์ระบุเองด้านล่าง)":
+                  st.session_state[note_input_key_dt] = chosen
+                  
+          note_options_dt = ["(พิมพ์ระบุเองด้านล่าง)"] + smart_note_suggestions_dt
+          st.selectbox(
+              "ค้นหาคำจากประวัติ:",
+              note_options_dt,
+              key=f"dt_note_picker_{st.session_state.form_ver}",
+              on_change=on_select_suggested_note_dt,
+              label_visibility="collapsed"
+          )
+          
+          top_chips_dt = smart_note_suggestions_dt[:5]
+          chip_cols_dt = st.columns(len(top_chips_dt))
+          for idx_c, chip_text in enumerate(top_chips_dt):
+              if chip_cols_dt[idx_c].button(f"⚡ {chip_text}", key=f"dt_chip_{idx_c}_{st.session_state.form_ver}", use_container_width=True):
+                  st.session_state[note_input_key_dt] = chip_text
+                  st.rerun()
+
       note = st.text_input(
-          "Note", placeholder="...", key=f"dt_note_{st.session_state.form_ver}"
+          "Note (รายละเอียด)",
+          placeholder="พิมพ์รายละเอียด หรือเลือกจากคำแนะนำด้านบน...",
+          key=note_input_key_dt,
       )
 
       if st.button("Save Transaction", use_container_width=True):
@@ -1775,7 +1885,7 @@ else:
                   if raw_goal_name != "📦 คลังออมทั่วไป"
                   else action_name
               )
-              full_category = f"{main_cat}: {sub_cat_final}"
+              full_category = f"{main_cat_dt}: {sub_cat_final}"
               popup_cat_display = full_category
 
               if raw_goal_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
@@ -1804,7 +1914,7 @@ else:
 
             else:
               popup_cat_display = (
-                  f"{main_cat}: {action_name} (แบ่ง {len(alloc_pcts_dt)}"
+                  f"{main_cat_dt}: {action_name} (แบ่ง {len(alloc_pcts_dt)}"
                   " เป้าหมาย)"
               )
               for g, pct in alloc_pcts_dt.items():
@@ -1816,7 +1926,7 @@ else:
                       if raw_g_name != "📦 คลังออมทั่วไป"
                       else action_name
                   )
-                  full_category = f"{main_cat}: {sub_cat_final}"
+                  full_category = f"{main_cat_dt}: {sub_cat_final}"
                   split_note = (
                       f"{note} (แบ่ง {pct:.1f}%)" if note else f"แบ่ง {pct:.1f}%"
                   )
@@ -1846,7 +1956,7 @@ else:
                   ])
           else:
             full_category = (
-                f"{main_cat}: {sub_cat}" if sub_cat != "ทั่วไป" else main_cat
+                f"{main_cat_dt}: {sub_cat_dt}" if sub_cat_dt != "ทั่วไป" else main_cat_dt
             )
             popup_cat_display = full_category
             sheet.append_row([
