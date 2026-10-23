@@ -72,6 +72,11 @@ TZ_TH = datetime.timezone(datetime.timedelta(hours=7))
 if "form_ver" not in st.session_state:
   st.session_state.form_ver = 0
 
+# 💾 จัดการค่าเริ่มต้นของการจัดเรียงหมวดหมู่
+SORT_MODES = ["🔤 ตัวอักษร", "🕒 ล่าสุด", "🔥 เยอะที่สุด"]
+saved_sort_mode = st.query_params.get("cat_sort", "🕒 ล่าสุด")
+default_sort_idx = SORT_MODES.index(saved_sort_mode) if saved_sort_mode in SORT_MODES else 1
+
 # 🎉 ระบบแสดง Pop-up แจ้งเตือนเมื่อบันทึกรายการสำเร็จ
 if hasattr(st, "dialog"):
 
@@ -437,7 +442,7 @@ qa_df = (
 )
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# 🔀 ฟังก์ชันจัดเรียง Categories & Sub-categories แบบฉลาด
+# 🔀 ฟังก์ชันจัดเรียง Categories & Sub-categories
 def get_sorted_categories(df_source, raw_options, sort_by="🔤 ตัวอักษร", is_sub=False, parent_cat=None):
     if not raw_options:
         return ["ทั่วไป"]
@@ -1084,8 +1089,18 @@ if app_mode == "📱 Mobile Mode":
       action_name = sav_action.split(" ")[1]
       sub_cat = action_name
     else:
-      # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่
-      sort_choice_mb = st.radio("เรียงลำดับหมวดหมู่:", ["🔤 ตัวอักษร", "🕒 ล่าสุด", "🔥 เยอะที่สุด"], horizontal=True, key="mb_cat_sort")
+      # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่แบบจำค่าใน URL
+      def on_sort_change_mb():
+        st.query_params["cat_sort"] = st.session_state.mb_cat_sort
+
+      sort_choice_mb = st.radio(
+          "เรียงลำดับหมวดหมู่:",
+          SORT_MODES,
+          index=default_sort_idx,
+          horizontal=True,
+          key="mb_cat_sort",
+          on_change=on_sort_change_mb
+      )
       
       raw_main = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
       main_options = get_sorted_categories(df, raw_main, sort_choice_mb, is_sub=False)
@@ -1526,7 +1541,7 @@ else:
 
         st.markdown(
             f"""
-                    <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0;'>
+                    <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin- crystalline: 10px 0;'>
                         <p style='margin:0; font-size: 14px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
                         {"<p style='margin:0; color: #f9744b; font-size: 14px; font-weight:600;'>⚠️ ยอดหนี้ค้างคืนคลัง: ฿" + f"{outstanding_loan:,.2f}</p>" if outstanding_loan > 0 else ""}
                     </div>
@@ -1537,8 +1552,18 @@ else:
         action_name = sav_action.split(" ")[1]
         sub_cat = action_name
       else:
-        # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่
-        sort_choice_dt = st.radio("เรียงลำดับหมวดหมู่:", ["🔤 ตัวอักษร", "🕒 ล่าสุด", "🔥 เยอะที่สุด"], horizontal=True, key="dt_cat_sort")
+        # 🔥 เพิ่มตัวเลือกการจัดเรียงหมวดหมู่แบบจำค่าใน URL
+        def on_sort_change_dt():
+          st.query_params["cat_sort"] = st.session_state.dt_cat_sort
+
+        sort_choice_dt = st.radio(
+            "เรียงลำดับหมวดหมู่:",
+            SORT_MODES,
+            index=default_sort_idx,
+            horizontal=True,
+            key="dt_cat_sort",
+            on_change=on_sort_change_dt
+        )
         
         c_main, c_sub = st.columns(2)
         with c_main:
