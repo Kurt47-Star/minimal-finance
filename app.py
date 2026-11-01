@@ -75,7 +75,9 @@ if "form_ver" not in st.session_state:
 # 💾 จัดการค่าเริ่มต้นของการจัดเรียงหมวดหมู่
 SORT_MODES = ["🔤 ตัวอักษร", "🕒 ล่าสุด", "🔥 เยอะที่สุด"]
 saved_sort_mode = st.query_params.get("cat_sort", "🕒 ล่าสุด")
-default_sort_idx = SORT_MODES.index(saved_sort_mode) if saved_sort_mode in SORT_MODES else 1
+default_sort_idx = (
+    SORT_MODES.index(saved_sort_mode) if saved_sort_mode in SORT_MODES else 1
+)
 
 # 🎉 ระบบแสดง Pop-up แจ้งเตือนเมื่อบันทึกรายการสำเร็จ
 if hasattr(st, "dialog"):
@@ -349,24 +351,33 @@ def parse_clean_datetime(date_series):
 def load_data():
   records = fetch_main_data()
   if not records:
-    return pd.DataFrame(columns=[
-        "วันที่",
-        "ประเภท",
-        "หมวดหมู่",
-        "จำนวนเงิน",
-        "รายละเอียด",
-        "กระเป๋า",
-        "หมวดหมู่หลัก",
-        "หมวดหมู่ย่อย",
-        "วันเวลา",
-        "วันที่_date",
-    ])
+    return pd.DataFrame(
+        columns=[
+            "วันที่",
+            "ประเภท",
+            "หมวดหมู่",
+            "จำนวนเงิน",
+            "รายละเอียด",
+            "กระเป๋า",
+            "หมวดหมู่หลัก",
+            "หมวดหมู่ย่อย",
+            "วันเวลา",
+            "วันที่_date",
+        ]
+    )
 
   df = pd.DataFrame(records)
   while len(df.columns) < 6:
     df[len(df.columns)] = ""
   df = df.iloc[:, :6]
-  df.columns = ["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด", "กระเป๋า"]
+  df.columns = [
+      "วันที่",
+      "ประเภท",
+      "หมวดหมู่",
+      "จำนวนเงิน",
+      "รายละเอียด",
+      "กระเป๋า",
+  ]
 
   df = df[df["วันที่"].astype(str).str.strip() != "วันที่"]
   df = df[df["วันที่"].astype(str).str.strip() != ""]
@@ -380,8 +391,10 @@ def load_data():
           else x
       )
   )
-  df["วันที่"] = df["วันเวลา"].dt.strftime("%Y-%m-%d %H:%M:%S").fillna(
-      df["วันที่"].astype(str)
+  df["วันที่"] = (
+      df["วันเวลา"]
+      .dt.strftime("%Y-%m-%d %H:%M:%S")
+      .fillna(df["วันที่"].astype(str))
   )
   df["วันที่_date"] = df["วันเวลา"].dt.date
   df["จำนวนเงิน"] = pd.to_numeric(df["จำนวนเงิน"], errors="coerce").fillna(0.0)
@@ -442,76 +455,91 @@ qa_df = (
 )
 cat_raw_df, SUB_CATEGORIES = load_categories()
 
-# 🔀 ฟังก์ชันจัดเรียง Categories & Sub-categories
-def get_sorted_categories(df_source, raw_options, sort_by="🔤 ตัวอักษร", is_sub=False, parent_cat=None):
-    if not raw_options:
-        return ["ทั่วไป"]
-        
-    if sort_by == "🔤 ตัวอักษร":
-        return sorted(list(raw_options))
-        
-    df_filtered = df_source.copy()
-    col_target = 'หมวดหมู่ย่อย' if is_sub else 'หมวดหมู่หลัก'
-    
-    if is_sub and parent_cat:
-        df_filtered = df_filtered[df_filtered['หมวดหมู่หลัก'] == parent_cat]
-        
-    if df_filtered.empty:
-        return sorted(list(raw_options))
-        
-    if sort_by == "🔥 เยอะที่สุด":
-        counts = df_filtered[col_target].value_counts()
-        return sorted(list(raw_options), key=lambda x: counts.get(x, 0), reverse=True)
-        
-    elif sort_by == "🕒 ล่าสุด":
-        last_times = df_filtered.groupby(col_target)['วันเวลา'].max()
-        min_time = pd.Timestamp.min
-        return sorted(list(raw_options), key=lambda x: last_times.get(x, min_time), reverse=True)
 
+# 🔀 ฟังก์ชันจัดเรียง Categories & Sub-categories
+def get_sorted_categories(
+    df_source, raw_options, sort_by="🔤 ตัวอักษร", is_sub=False, parent_cat=None
+):
+  if not raw_options:
+    return ["ทั่วไป"]
+
+  if sort_by == "🔤 ตัวอักษร":
     return sorted(list(raw_options))
+
+  df_filtered = df_source.copy()
+  col_target = "หมวดหมู่ย่อย" if is_sub else "หมวดหมู่หลัก"
+
+  if is_sub and parent_cat:
+    df_filtered = df_filtered[df_filtered["หมวดหมู่หลัก"] == parent_cat]
+
+  if df_filtered.empty:
+    return sorted(list(raw_options))
+
+  if sort_by == "🔥 เยอะที่สุด":
+    counts = df_filtered[col_target].value_counts()
+    return sorted(
+        list(raw_options), key=lambda x: counts.get(x, 0), reverse=True
+    )
+
+  elif sort_by == "🕒 ล่าสุด":
+    last_times = df_filtered.groupby(col_target)["วันเวลา"].max()
+    min_time = pd.Timestamp.min
+    return sorted(
+        list(raw_options),
+        key=lambda x: last_times.get(x, min_time),
+        reverse=True,
+    )
+
+  return sorted(list(raw_options))
+
 
 # 💡 ฟังก์ชันวิเคราะห์ประวัติโน้ตเก่า เพื่อทำนายคำแนะนำตามหมวดหมู่ (Smart Predictive Notes)
 def get_smart_note_suggestions(df_source, main_cat, sub_cat, limit=12):
-    if df_source.empty or 'รายละเอียด' not in df_source.columns:
-        return []
-    
-    valid = df_source.dropna(subset=['รายละเอียด']).copy()
-    valid['รายละเอียด'] = valid['รายละเอียด'].astype(str).str.strip()
-    valid = valid[(valid['รายละเอียด'] != '') & (valid['รายละเอียด'] != 'nan') & (valid['รายละเอียด'] != 'บันทึกด่วน')]
-    
-    if valid.empty:
-        return []
-        
-    exact_match = valid[(valid['หมวดหมู่หลัก'] == main_cat) & (valid['หมวดหมู่ย่อย'] == sub_cat)]
-    main_match = valid[valid['หมวดหมู่หลัก'] == main_cat]
-    
-    suggestions = []
-    
-    def rank_notes(df_sub):
-        if df_sub.empty:
-            return []
-        grp = df_sub.groupby('รายละเอียด').agg(
-            count=('วันที่', 'count'),
-            latest=('วันเวลา', 'max')
-        ).sort_values(by=['count', 'latest'], ascending=[False, False])
-        return list(grp.index)
-    
-    # อันดับ 1: โน้ตที่เคยบันทึกใน Sub-category นี้เป๊ะๆ
-    for n in rank_notes(exact_match):
-        if n not in suggestions:
-            suggestions.append(n)
-            
-    # อันดับ 2: โน้ตในหมวดหมู่หลักเดียวกัน
-    for n in rank_notes(main_match):
-        if n not in suggestions:
-            suggestions.append(n)
-            
-    # อันดับ 3: โน้ตที่บันทึกบ่อยทั่วทั้งแอป
-    for n in rank_notes(valid):
-        if n not in suggestions:
-            suggestions.append(n)
-            
-    return suggestions[:limit]
+  if df_source.empty or "รายละเอียด" not in df_source.columns:
+    return []
+
+  valid = df_source.dropna(subset=["รายละเอียด"]).copy()
+  valid["รายละเอียด"] = valid["รายละเอียด"].astype(str).str.strip()
+  valid = valid[
+      (valid["รายละเอียด"] != "")
+      & (valid["รายละเอียด"] != "nan")
+      & (valid["รายละเอียด"] != "บันทึกด่วน")
+  ]
+
+  if valid.empty:
+    return []
+
+  exact_match = valid[
+      (valid["หมวดหมู่หลัก"] == main_cat) & (valid["หมวดหมู่ย่อย"] == sub_cat)
+  ]
+  main_match = valid[valid["หมวดหมู่หลัก"] == main_cat]
+
+  suggestions = []
+
+  def rank_notes(df_sub):
+    if df_sub.empty:
+      return []
+    grp = (
+        df_sub.groupby("รายละเอียด")
+        .agg(count=("วันที่", "count"), latest=("วันเวลา", "max"))
+        .sort_values(by=["count", "latest"], ascending=[False, False])
+    )
+    return list(grp.index)
+
+  for n in rank_notes(exact_match):
+    if n not in suggestions:
+      suggestions.append(n)
+
+  for n in rank_notes(main_match):
+    if n not in suggestions:
+      suggestions.append(n)
+
+  for n in rank_notes(valid):
+    if n not in suggestions:
+      suggestions.append(n)
+
+  return suggestions[:limit]
+
 
 budgets_data = fetch_budgets()
 df_budgets = (
@@ -555,13 +583,15 @@ goals_data = fetch_goals()
 df_goals = (
     pd.DataFrame(goals_data)
     if goals_data
-    else pd.DataFrame(columns=[
-        "ไอคอน",
-        "ชื่อเป้าหมาย",
-        "เป้าหมาย (บาท)",
-        "สะสมแล้ว (บาท)",
-        "ความสำคัญ",
-    ])
+    else pd.DataFrame(
+        columns=[
+            "ไอคอน",
+            "ชื่อเป้าหมาย",
+            "เป้าหมาย (บาท)",
+            "สะสมแล้ว (บาท)",
+            "ความสำคัญ",
+        ]
+    )
 )
 if "ความสำคัญ" not in df_goals.columns:
   df_goals["ความสำคัญ"] = "⭐ ปานกลาง (Medium)"
@@ -583,15 +613,15 @@ def calculate_savings_metrics(df_source):
       .astype(str)
       .str.contains("ออม|save|saving", case=False, na=False)
       | df_source["หมวดหมู่"]
-          .astype(str)
-          .str.contains(
-              "ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน",
-              case=False,
-              na=False,
-          )
+      .astype(str)
+      .str.contains(
+          "ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน",
+          case=False,
+          na=False,
+      )
       | df_source["รายละเอียด"]
-          .astype(str)
-          .str.contains("ออมสิน|aomsin|เงินออม", case=False, na=False)
+      .astype(str)
+      .str.contains("ออมสิน|aomsin|เงินออม", case=False, na=False)
   ) & ~df_source["ประเภท"].astype(str).str.contains(
       "ถอน|กู้|คืน|รายจ่าย", case=False, na=False
   )
@@ -757,9 +787,24 @@ def render_wallet_cards_html(balances_dict, net_total):
   for idx, w in enumerate(wallet_list):
     c = card_colors[idx % len(card_colors)]
     bal = balances_dict.get(w, 0.0)
-    cards_html += f"<div style='flex: 1; min-width: 155px; background-color: {c}18; border: 1px solid {c}; padding: 12px 16px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.85;'>{w}</span><h3 style='margin: 4px 0 0 0; color: {c}; font-size: 22px;'>฿{bal:,.2f}</h3></div>"
-  cards_html += f"<div style='flex: 1; min-width: 165px; background-color: var(--secondary-background-color); border: 2px solid #2a9d8f; padding: 12px 16px; border-radius: 14px;'><span style='font-size: 13px; opacity: 0.9; font-weight: 600;'>💰 รวมทั้งหมด (Net Wealth)</span><h3 style='margin: 4px 0 0 0; font-size: 22px;'>฿{net_total:,.2f}</h3></div>"
-  return f"<div style='display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px;'>{cards_html}</div>"
+    cards_html += (
+        f"<div style='flex: 1; min-width: 155px; background-color: {c}18;"
+        f" border: 1px solid {c}; padding: 12px 16px; border-radius:"
+        f" 14px;'><span style='font-size: 13px; opacity: 0.85;'>{w}</span><h3"
+        f" style='margin: 4px 0 0 0; color: {c}; font-size:"
+        f" 22px;'>฿{bal:,.2f}</h3></div>"
+    )
+  cards_html += (
+      "<div style='flex: 1; min-width: 165px; background-color:"
+      " var(--secondary-background-color); border: 2px solid #2a9d8f; padding:"
+      " 12px 16px; border-radius: 14px;'><span style='font-size: 13px; opacity:"
+      " 0.9; font-weight: 600;'>💰 รวมทั้งหมด (Net Wealth)</span><h3"
+      f" style='margin: 4px 0 0 0; font-size: 22px;'>฿{net_total:,.2f}</h3></div>"
+  )
+  return (
+      "<div style='display: flex; flex-wrap: wrap; gap: 12px; margin-bottom:"
+      f" 18px;'>{cards_html}</div>"
+  )
 
 
 # ฟังก์ชันแสดง 5 รายการล่าสุด
@@ -1135,6 +1180,7 @@ if app_mode == "📱 Mobile Mode":
       action_name = sav_action.split(" ")[1]
       sub_cat = action_name
     else:
+
       def on_sort_change_mb():
         st.query_params["cat_sort"] = st.session_state.mb_cat_sort
 
@@ -1144,15 +1190,27 @@ if app_mode == "📱 Mobile Mode":
           index=default_sort_idx,
           horizontal=True,
           key="mb_cat_sort",
-          on_change=on_sort_change_mb
+          on_change=on_sort_change_mb,
       )
-      
-      raw_main = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
-      main_options = get_sorted_categories(df, raw_main, sort_choice_mb, is_sub=False)
+
+      raw_main = (
+          list(SUB_CATEGORIES[type_entry].keys())
+          if SUB_CATEGORIES.get(type_entry)
+          else ["ทั่วไป"]
+      )
+      main_options = get_sorted_categories(
+          df, raw_main, sort_choice_mb, is_sub=False
+      )
       main_cat = st.selectbox("Category", main_options, key="mb_main")
-      
-      raw_sub = SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"]) if main_cat in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
-      sub_options = get_sorted_categories(df, raw_sub, sort_choice_mb, is_sub=True, parent_cat=main_cat)
+
+      raw_sub = (
+          SUB_CATEGORIES[type_entry].get(main_cat, ["ทั่วไป"])
+          if main_cat in SUB_CATEGORIES.get(type_entry, {})
+          else ["ทั่วไป"]
+      )
+      sub_options = get_sorted_categories(
+          df, raw_sub, sort_choice_mb, is_sub=True, parent_cat=main_cat
+      )
       sub_cat = st.selectbox("Sub-category", sub_options, key="mb_sub")
 
   c_md1, c_mt1 = st.columns(2)
@@ -1292,32 +1350,37 @@ if app_mode == "📱 Mobile Mode":
   smart_note_suggestions_mb = get_smart_note_suggestions(df, main_cat, sub_cat)
   note_input_key_mb = f"mb_note_{st.session_state.form_ver}"
   if note_input_key_mb not in st.session_state:
-      st.session_state[note_input_key_mb] = ""
+    st.session_state[note_input_key_mb] = ""
 
   if smart_note_suggestions_mb:
-      st.caption("💡 แนะนำจากที่เคยพิมพ์ในหมวดนี้ (พิมพ์ค้นหาหรือคลิกเลือกได้เลย):")
-      
-      def on_select_suggested_note_mb():
-          chosen = st.session_state[f"mb_note_picker_{st.session_state.form_ver}"]
-          if chosen and chosen != "(พิมพ์ระบุเองด้านล่าง)":
-              st.session_state[note_input_key_mb] = chosen
-              
-      note_options_mb = ["(พิมพ์ระบุเองด้านล่าง)"] + smart_note_suggestions_mb
-      st.selectbox(
-          "ค้นหาคำจากประวัติ:",
-          note_options_mb,
-          key=f"mb_note_picker_{st.session_state.form_ver}",
-          on_change=on_select_suggested_note_mb,
-          label_visibility="collapsed"
-      )
-      
-      # ปุ่มชิปด่วนสำหรับคำที่ใช้บ่อย 4 คำแรก
-      top_chips_mb = smart_note_suggestions_mb[:4]
-      chip_cols_mb = st.columns(len(top_chips_mb))
-      for idx_c, chip_text in enumerate(top_chips_mb):
-          if chip_cols_mb[idx_c].button(f"⚡ {chip_text}", key=f"mb_chip_{idx_c}_{st.session_state.form_ver}", use_container_width=True):
-              st.session_state[note_input_key_mb] = chip_text
-              st.rerun()
+    st.caption(
+        "💡 แนะนำจากที่เคยพิมพ์ในหมวดนี้ (พิมพ์ค้นหาหรือคลิกเลือกได้เลย):"
+    )
+
+    def on_select_suggested_note_mb():
+      chosen = st.session_state[f"mb_note_picker_{st.session_state.form_ver}"]
+      if chosen and chosen != "(พิมพ์ระบุเองด้านล่าง)":
+        st.session_state[note_input_key_mb] = chosen
+
+    note_options_mb = ["(พิมพ์ระบุเองด้านล่าง)"] + smart_note_suggestions_mb
+    st.selectbox(
+        "ค้นหาคำจากประวัติ:",
+        note_options_mb,
+        key=f"mb_note_picker_{st.session_state.form_ver}",
+        on_change=on_select_suggested_note_mb,
+        label_visibility="collapsed",
+    )
+
+    top_chips_mb = smart_note_suggestions_mb[:4]
+    chip_cols_mb = st.columns(len(top_chips_mb))
+    for idx_c, chip_text in enumerate(top_chips_mb):
+      if chip_cols_mb[idx_c].button(
+          f"⚡ {chip_text}",
+          key=f"mb_chip_{idx_c}_{st.session_state.form_ver}",
+          use_container_width=True,
+      ):
+        st.session_state[note_input_key_mb] = chip_text
+        st.rerun()
 
   note = st.text_input(
       "Note (รายละเอียด)",
@@ -1620,7 +1683,7 @@ else:
 
         st.markdown(
             f"""
-                    <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin- crystalline: 10px 0;'>
+                    <div style='background-color: rgba(69, 123, 157, 0.1); border-left: 4px solid #457b9d; padding: 12px 20px; border-radius: 8px; margin: 10px 0;'>
                         <p style='margin:0; font-size: 14px; opacity: 0.8;'>💰 คลังเงินออมปัจจุบัน: <b>฿{total_sav_now:,.2f}</b></p>
                         {"<p style='margin:0; color: #f9744b; font-size: 14px; font-weight:600;'>⚠️ ยอดหนี้ค้างคืนคลัง: ฿" + f"{outstanding_loan:,.2f}</p>" if outstanding_loan > 0 else ""}
                     </div>
@@ -1631,6 +1694,7 @@ else:
         action_name = sav_action.split(" ")[1]
         sub_cat_dt = action_name
       else:
+
         def on_sort_change_dt():
           st.query_params["cat_sort"] = st.session_state.dt_cat_sort
 
@@ -1640,17 +1704,29 @@ else:
             index=default_sort_idx,
             horizontal=True,
             key="dt_cat_sort",
-            on_change=on_sort_change_dt
+            on_change=on_sort_change_dt,
         )
-        
+
         c_main, c_sub = st.columns(2)
         with c_main:
-          raw_main_dt = list(SUB_CATEGORIES[type_entry].keys()) if SUB_CATEGORIES.get(type_entry) else ["ทั่วไป"]
-          main_options = get_sorted_categories(df, raw_main_dt, sort_choice_dt, is_sub=False)
+          raw_main_dt = (
+              list(SUB_CATEGORIES[type_entry].keys())
+              if SUB_CATEGORIES.get(type_entry)
+              else ["ทั่วไป"]
+          )
+          main_options = get_sorted_categories(
+              df, raw_main_dt, sort_choice_dt, is_sub=False
+          )
           main_cat_dt = st.selectbox("Category", main_options, key="dt_main")
         with c_sub:
-          raw_sub_dt = SUB_CATEGORIES[type_entry].get(main_cat_dt, ["ทั่วไป"]) if main_cat_dt in SUB_CATEGORIES.get(type_entry, {}) else ["ทั่วไป"]
-          sub_options = get_sorted_categories(df, raw_sub_dt, sort_choice_dt, is_sub=True, parent_cat=main_cat_dt)
+          raw_sub_dt = (
+              SUB_CATEGORIES[type_entry].get(main_cat_dt, ["ทั่วไป"])
+              if main_cat_dt in SUB_CATEGORIES.get(type_entry, {})
+              else ["ทั่วไป"]
+          )
+          sub_options = get_sorted_categories(
+              df, raw_sub_dt, sort_choice_dt, is_sub=True, parent_cat=main_cat_dt
+          )
           sub_cat_dt = st.selectbox("Sub-category", sub_options, key="dt_sub")
 
       c_date_tool, c_time_tool = st.columns([1, 1])
@@ -1798,34 +1874,44 @@ else:
           st.warning("⚠️ กรุณาเลือกเป้าหมายที่ต้องการแบ่งเงินด้านบนก่อนครับ")
 
       # 💡 ระบบวิเคราะห์โน้ตแนะนำตามหมวดหมู่ (Desktop Mode)
-      smart_note_suggestions_dt = get_smart_note_suggestions(df, main_cat_dt, sub_cat_dt)
+      smart_note_suggestions_dt = get_smart_note_suggestions(
+          df, main_cat_dt, sub_cat_dt
+      )
       note_input_key_dt = f"dt_note_{st.session_state.form_ver}"
       if note_input_key_dt not in st.session_state:
-          st.session_state[note_input_key_dt] = ""
+        st.session_state[note_input_key_dt] = ""
 
       if smart_note_suggestions_dt:
-          st.caption("💡 แนะนำจากที่เคยพิมพ์ในหมวดนี้ (พิมพ์ค้นหาหรือคลิกเลือกได้เลย):")
-          
-          def on_select_suggested_note_dt():
-              chosen = st.session_state[f"dt_note_picker_{st.session_state.form_ver}"]
-              if chosen and chosen != "(พิมพ์ระบุเองด้านล่าง)":
-                  st.session_state[note_input_key_dt] = chosen
-                  
-          note_options_dt = ["(พิมพ์ระบุเองด้านล่าง)"] + smart_note_suggestions_dt
-          st.selectbox(
-              "ค้นหาคำจากประวัติ:",
-              note_options_dt,
-              key=f"dt_note_picker_{st.session_state.form_ver}",
-              on_change=on_select_suggested_note_dt,
-              label_visibility="collapsed"
-          )
-          
-          top_chips_dt = smart_note_suggestions_dt[:5]
-          chip_cols_dt = st.columns(len(top_chips_dt))
-          for idx_c, chip_text in enumerate(top_chips_dt):
-              if chip_cols_dt[idx_c].button(f"⚡ {chip_text}", key=f"dt_chip_{idx_c}_{st.session_state.form_ver}", use_container_width=True):
-                  st.session_state[note_input_key_dt] = chip_text
-                  st.rerun()
+        st.caption(
+            "💡 แนะนำจากที่เคยพิมพ์ในหมวดนี้ (พิมพ์ค้นหาหรือคลิกเลือกได้เลย):"
+        )
+
+        def on_select_suggested_note_dt():
+          chosen = st.session_state[
+              f"dt_note_picker_{st.session_state.form_ver}"
+          ]
+          if chosen and chosen != "(พิมพ์ระบุเองด้านล่าง)":
+            st.session_state[note_input_key_dt] = chosen
+
+        note_options_dt = ["(พิมพ์ระบุเองด้านล่าง)"] + smart_note_suggestions_dt
+        st.selectbox(
+            "ค้นหาคำจากประวัติ:",
+            note_options_dt,
+            key=f"dt_note_picker_{st.session_state.form_ver}",
+            on_change=on_select_suggested_note_dt,
+            label_visibility="collapsed",
+        )
+
+        top_chips_dt = smart_note_suggestions_dt[:5]
+        chip_cols_dt = st.columns(len(top_chips_dt))
+        for idx_c, chip_text in enumerate(top_chips_dt):
+          if chip_cols_dt[idx_c].button(
+              f"⚡ {chip_text}",
+              key=f"dt_chip_{idx_c}_{st.session_state.form_ver}",
+              use_container_width=True,
+          ):
+            st.session_state[note_input_key_dt] = chip_text
+            st.rerun()
 
       note = st.text_input(
           "Note (รายละเอียด)",
@@ -1956,7 +2042,9 @@ else:
                   ])
           else:
             full_category = (
-                f"{main_cat_dt}: {sub_cat_dt}" if sub_cat_dt != "ทั่วไป" else main_cat_dt
+                f"{main_cat_dt}: {sub_cat_dt}"
+                if sub_cat_dt != "ทั่วไป"
+                else main_cat_dt
             )
             popup_cat_display = full_category
             sheet.append_row([
@@ -1992,14 +2080,16 @@ else:
     df_cycles = (
         pd.DataFrame(cycles_data)
         if cycles_data
-        else pd.DataFrame(columns=[
-            "ชื่อรอบบัญชี",
-            "เริ่มต้น",
-            "สิ้นสุด",
-            "สถานะ",
-            "ยอดยกมา",
-            "เงินจริงกรุงไทย",
-        ])
+        else pd.DataFrame(
+            columns=[
+                "ชื่อรอบบัญชี",
+                "เริ่มต้น",
+                "สิ้นสุด",
+                "สถานะ",
+                "ยอดยกมา",
+                "เงินจริงกรุงไทย",
+            ]
+        )
     )
 
     cycle_options = []
@@ -2103,19 +2193,19 @@ else:
         .astype(str)
         .str.contains("ลงทุน|invest", case=False, na=False)
         | df_cycle["หมวดหมู่"]
-            .astype(str)
-            .str.contains(
-                "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
-                case=False,
-                na=False,
-            )
+        .astype(str)
+        .str.contains(
+            "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
+            case=False,
+            na=False,
+        )
         | df_cycle["รายละเอียด"]
-            .astype(str)
-            .str.contains(
-                "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
-                case=False,
-                na=False,
-            )
+        .astype(str)
+        .str.contains(
+            "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
+            case=False,
+            na=False,
+        )
     ) & ~df_cycle["ประเภท"].astype(str).str.contains(
         "ถอน|คืน|ปรับยอด", case=False, na=False
     )
@@ -2136,12 +2226,12 @@ else:
         .str.contains("รายจ่าย|expense", case=False, na=False)
         & ~inv_mask
         & ~df_cycle["หมวดหมู่"]
-            .astype(str)
-            .str.contains(
-                "ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน",
-                case=False,
-                na=False,
-            )
+        .astype(str)
+        .str.contains(
+            "ฝากออม|ออมเงิน|เงินออม|เก็บออม|aomsin|ออมสิน",
+            case=False,
+            na=False,
+        )
         & ~df_cycle["ประเภท"].astype(str).str.contains(
             "ปรับยอด", case=False, na=False
         )
@@ -2165,14 +2255,13 @@ else:
     # 🔥 กล่องคาลิเบรท
     if selected_cycle_label != "🌟 แสดงข้อมูลทั้งหมด (All Time)":
       with st.expander(
-          f"⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) —"
-          f" ปรับยอดให้ตรงตามแอปธนาคารทันที",
+          "⚖️ คาลิเบรทเงินจริงทุกกระเป๋า (Multi-Wallet Sync) —"
+          " ปรับยอดให้ตรงตามแอปธนาคารทันที",
           expanded=False,
       ):
         st.caption(
             "💡 กรอกตัวเลขเงินจริงที่เหลืออยู่ในแต่ละแอปตอนนี้"
-            " แล้วกดปุ่มสีส้มด้านล่าง"
-            " ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100%"
+            " แล้วกดปุ่มสีส้มด้านล่าง ระบบจะปรับยอดทุกการ์ดให้ตรงเป๊ะ 100%"
             " ทันทีโดยไม่กระทบสถิติรายจ่าย!"
         )
 
@@ -2256,21 +2345,21 @@ else:
     )
     m3.markdown(
         "<div class='metric-card'><div class='metric-title'>Expenses <span"
-        f" style='color:#f9744b;'>↘</span></div><div"
+        " style='color:#f9744b;'>↘</span></div><div"
         f" class='metric-value'>฿{exp:,.0f}</div><div"
         " class='metric-currency'>THB</div></div>",
         unsafe_allow_html=True,
     )
 
     loan_badge = (
-        f"<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️"
+        "<div style='font-size:11px;color:#f9744b;font-weight:600;margin-top:2px;'>⚠️"
         f" หนี้ค้าง: ฿{outstanding_loan:,.0f}</div>"
         if outstanding_loan > 0
         else ""
     )
     m4.markdown(
         "<div class='metric-card'><div class='metric-title'>Savings <span"
-        f" style='color:#457b9d;'>↗</span></div><div"
+        " style='color:#457b9d;'>↗</span></div><div"
         f" class='metric-value'>฿{sav_flow:,.0f}</div><div"
         " style='font-size:11px;color:#457b9d;font-weight:600;margin-top:2px;'>🏦"
         f" คลังรวม: ฿{total_sav_now:,.0f}</div>{loan_badge}</div>",
@@ -2278,7 +2367,7 @@ else:
     )
     m5.markdown(
         "<div class='metric-card'><div class='metric-title'>Investments <span"
-        f" style='color:#e9c46a;'>↗</span></div><div"
+        " style='color:#e9c46a;'>↗</span></div><div"
         f" class='metric-value'>฿{inv:,.0f}</div><div"
         " class='metric-currency'>THB</div></div>",
         unsafe_allow_html=True,
@@ -2310,19 +2399,19 @@ else:
           .astype(str)
           .str.contains("ลงทุน|invest", case=False, na=False)
           | df_c["หมวดหมู่"]
-              .astype(str)
-              .str.contains(
-                  "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
-                  case=False,
-                  na=False,
-              )
+          .astype(str)
+          .str.contains(
+              "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
+              case=False,
+              na=False,
+          )
           | df_c["รายละเอียด"]
-              .astype(str)
-              .str.contains(
-                  "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
-                  case=False,
-                  na=False,
-              )
+          .astype(str)
+          .str.contains(
+              "ลงทุน|invest|หุ้น|กองทุน|crypto|คริปโต|gold|ทอง",
+              case=False,
+              na=False,
+          )
       ) & ~df_c["ประเภท"].astype(str).str.contains(
           "ถอน|คืน|ปรับยอด", case=False, na=False
       )
@@ -2330,9 +2419,7 @@ else:
 
       _, _, _, _, c_sav, _ = calculate_savings_metrics(df_c)
 
-      clean_label = (
-          label.replace("🟢 ", "").replace("📅 ", "").split(" (")[0]
-      )
+      clean_label = label.replace("🟢 ", "").replace("📅 ", "").split(" (")[0]
 
       cycle_summary_data.append({
           "รอบบัญชี (Cycle)": clean_label,
@@ -2594,9 +2681,7 @@ else:
           final_name = (
               new_circle_name
               if new_circle_name.strip()
-              else (
-                  f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
-              )
+              else f"Circle {datetime.datetime.now(TZ_TH).strftime('%B %Y')}"
           )
           start_carry = (
               float(selected_kt_real)
@@ -2621,7 +2706,7 @@ else:
     st.markdown("---")
 
     # ==========================================
-    # 🔥 📊 Periodic Bar Analysis
+    # 🔥 📊 Periodic Bar Analysis (เพิ่มการกรองและแยกสีระดับหมวดหมู่ย่อย)
     # ==========================================
     def clean_type_name(t_str):
       t = str(t_str).strip()
@@ -2703,9 +2788,7 @@ else:
         df_bar_raw["sort_key"] = (
             df_bar_raw["วันเวลา"].dt.to_period("M").dt.start_time
         )
-        df_bar_raw["ช่วงเวลา_str"] = df_bar_raw["sort_key"].dt.strftime(
-            "%b %Y"
-        )
+        df_bar_raw["ช่วงเวลา_str"] = df_bar_raw["sort_key"].dt.strftime("%b %Y")
         time_unit_label = "เดือน"
       else:
         df_bar_raw["sort_key"] = (
@@ -2730,34 +2813,61 @@ else:
       ].copy()
 
       if not df_bar_metric.empty:
-        available_cats_bar = sorted([
-            str(c)
-            for c in df_bar_metric["หมวดหมู่หลัก"].unique()
-            if pd.notnull(c) and str(c).strip() != ""
-        ])
-        selected_bar_cats = st.multiselect(
-            f"🔎 กรองดูเฉพาะหมวดหมู่หลัก (เว้นว่างเพื่อดูทั้งหมด):",
-            available_cats_bar,
-            default=[],
-            key="bar_cat_select",
-        )
+        # 🔎 เพิ่มตัวกรองทั้งหมวดหมู่หลัก และ หมวดหมู่ย่อย ในหน้าเดียวกัน
+        c_f_main, c_f_sub, c_f_color = st.columns([1.5, 1.5, 1.2])
+        with c_f_main:
+          available_cats_bar = sorted([
+              str(c)
+              for c in df_bar_metric["หมวดหมู่หลัก"].unique()
+              if pd.notnull(c) and str(c).strip() != ""
+          ])
+          selected_bar_cats = st.multiselect(
+              "🔎 กรองหมวดหมู่หลัก (เว้นว่าง=ทั้งหมด):",
+              available_cats_bar,
+              default=[],
+              key="bar_cat_select",
+          )
 
         if selected_bar_cats:
           df_bar_metric = df_bar_metric[
               df_bar_metric["หมวดหมู่หลัก"].isin(selected_bar_cats)
           ]
 
+        with c_f_sub:
+          available_subcats_bar = sorted([
+              str(c)
+              for c in df_bar_metric["หมวดหมู่ย่อย"].unique()
+              if pd.notnull(c) and str(c).strip() != ""
+          ])
+          selected_bar_subcats = st.multiselect(
+              "🔎 กรองหมวดหมู่ย่อย (เว้นว่าง=ทั้งหมด):",
+              available_subcats_bar,
+              default=[],
+              key="bar_subcat_select",
+          )
+
+        if selected_bar_subcats:
+          df_bar_metric = df_bar_metric[
+              df_bar_metric["หมวดหมู่ย่อย"].isin(selected_bar_subcats)
+          ]
+
+        with c_f_color:
+          bar_color_dim = st.radio(
+              "🎨 แยกสีแท่งกราฟตาม:",
+              ["หมวดหมู่หลัก", "หมวดหมู่ย่อย"],
+              horizontal=True,
+              key="bar_color_dim_radio",
+          )
+
         if not df_bar_metric.empty:
           total_amt = df_bar_metric["จำนวนเงิน"].sum()
           unique_periods = df_bar_metric["sort_key"].nunique()
-          avg_amt = (
-              total_amt / unique_periods if unique_periods > 0 else 0
-          )
+          avg_amt = total_amt / unique_periods if unique_periods > 0 else 0
 
           st.markdown(
-              f"**💡 สรุปยอดรวมที่เลือก:** ทั้งหมด **฿{total_amt:,.2f}** | เฉลี่ย"
-              f" **฿{avg_amt:,.2f} / {time_unit_label}** (จาก {unique_periods}"
-              f" {time_unit_label})"
+              f"**💡 สรุปยอดรวมที่เลือก:** ทั้งหมด **฿{total_amt:,.2f}** |"
+              f" เฉลี่ย **฿{avg_amt:,.2f} / {time_unit_label}** (จาก"
+              f" {unique_periods} {time_unit_label})"
           )
 
           if "เปรียบเทียบทุกประเภท" in bar_metric_mode:
@@ -2793,13 +2903,20 @@ else:
                 by=["sort_key", "จำนวนเงิน"], ascending=[True, False]
             )
 
+            color_col_bar = (
+                "หมวดหมู่ย่อย"
+                if bar_color_dim == "หมวดหมู่ย่อย"
+                else "หมวดหมู่หลัก"
+            )
+
             fig_bar = px.bar(
                 stacked_data,
                 x="ช่วงเวลา_str",
                 y="จำนวนเงิน",
-                color="หมวดหมู่หลัก",
+                color=color_col_bar,
                 color_discrete_sequence=SUB_CAT_PALETTE,
                 hover_data={
+                    "หมวดหมู่หลัก": True,
                     "หมวดหมู่ย่อย": True,
                     "รายละเอียด": True,
                     "sort_key": False,
@@ -2850,7 +2967,7 @@ else:
 
           if "เปรียบเทียบทุกประเภท" not in bar_metric_mode:
             with st.expander(
-                f"📋 ตารางรายละเอียดแจกแจงรายการ"
+                "📋 ตารางรายละเอียดแจกแจงรายการ"
                 f" ({bar_metric_mode.split(' ')[1]})",
                 expanded=False,
             ):
@@ -2860,7 +2977,8 @@ else:
               )
               show_exp_table = df_bar_metric[[
                   "วันที่",
-                  "หมวดหมู่",
+                  "หมวดหมู่หลัก",
+                  "หมวดหมู่ย่อย",
                   "รายละเอียด",
                   "จำนวนเงิน",
                   "กระเป๋า",
@@ -2871,41 +2989,78 @@ else:
         else:
           st.info("ไม่มีข้อมูลหลังจากการกรองหมวดหมู่ครับ")
       else:
-        st.info(f"ไม่มีข้อมูล '{bar_metric_mode.split(' ')[1]}' ในช่วงเวลานี้ครับ")
+        st.info(
+            f"ไม่มีข้อมูล '{bar_metric_mode.split(' ')[1]}' ในช่วงเวลานี้ครับ"
+        )
     else:
       st.info("ไม่มีข้อมูลการเงินบันทึกไว้ในรอบเดือนนี้ครับ")
 
     st.markdown("---")
 
-    # 🔥 Expense Analysis
-    col_exp_title, col_exp_filter = st.columns([2, 1.5])
-    with col_exp_title:
-      st.markdown(
-          "<p class='quick-add-text'>Expense Analysis"
-          " (วิเคราะห์สัดส่วนรายจ่ายองค์รวม)</p>",
-          unsafe_allow_html=True,
-      )
-    with col_exp_filter:
-      if not expense_df.empty:
-        raw_cats = expense_df["หมวดหมู่หลัก"].unique()
-        all_main_cats = sorted([
-            str(c).strip()
-            for c in raw_cats
-            if pd.notnull(c) and str(c).strip() != ""
-        ])
+    # ==========================================
+    # 🔥 🍩 Expense Analysis (เพิ่มการดูเจาะลึกหมวดหมู่ย่อยเต็มรูปแบบ)
+    # ==========================================
+    st.markdown(
+        "<p class='quick-add-text'>🍩 Expense Analysis"
+        " (วิเคราะห์สัดส่วนรายจ่ายองค์รวม & เจาะลึกหมวดหมู่ย่อย)</p>",
+        unsafe_allow_html=True,
+    )
+
+    if not expense_df.empty:
+      raw_cats = expense_df["หมวดหมู่หลัก"].unique()
+      all_main_cats = sorted([
+          str(c).strip()
+          for c in raw_cats
+          if pd.notnull(c) and str(c).strip() != ""
+      ])
+
+      col_ef1, col_ef2, col_ef3 = st.columns([1.5, 1.5, 1.2])
+      with col_ef1:
         selected_main_filter = st.multiselect(
-            "🔎 ติ๊กเลือกหมวดหมู่ที่ต้องการดู:",
+            "🔎 เลือกหมวดหมู่หลัก:",
             all_main_cats,
             default=all_main_cats,
+            key="exp_main_filter",
         )
 
-    col_chart1, col_chart2 = st.columns([1, 1.2])
-    if not expense_df.empty:
-      filtered_expense_df = (
+      temp_exp_df = (
           expense_df[expense_df["หมวดหมู่หลัก"].isin(selected_main_filter)]
           if selected_main_filter
           else pd.DataFrame(columns=expense_df.columns)
       )
+
+      with col_ef2:
+        raw_subcats = (
+            temp_exp_df["หมวดหมู่ย่อย"].unique()
+            if not temp_exp_df.empty
+            else []
+        )
+        all_sub_cats = sorted([
+            str(c).strip()
+            for c in raw_subcats
+            if pd.notnull(c) and str(c).strip() != ""
+        ])
+        selected_sub_filter = st.multiselect(
+            "🔎 เลือกหมวดหมู่ย่อย (เว้นว่าง=ดูทั้งหมดในหมวดหลัก):",
+            all_sub_cats,
+            default=[],
+            key="exp_sub_filter",
+        )
+
+      with col_ef3:
+        pie_view_level = st.radio(
+            "🍩 มุมมองกราฟโดนัท:",
+            ["หมวดหมู่หลัก", "หมวดหมู่ย่อย"],
+            horizontal=True,
+            key="pie_view_level_radio",
+        )
+
+      filtered_expense_df = temp_exp_df.copy()
+      if selected_sub_filter:
+        filtered_expense_df = filtered_expense_df[
+            filtered_expense_df["หมวดหมู่ย่อย"].isin(selected_sub_filter)
+        ]
+
       all_pie_data = expense_df.groupby("หมวดหมู่หลัก", as_index=False)[
           "จำนวนเงิน"
       ].sum()
@@ -2915,21 +3070,42 @@ else:
           for i, cat in enumerate(unique_main_cats)
       }
 
+      col_chart1, col_chart2 = st.columns([1, 1.2])
+
       with col_chart1:
         if not filtered_expense_df.empty:
-          pie_data = filtered_expense_df.groupby(
-              "หมวดหมู่หลัก", as_index=False
-          )["จำนวนเงิน"].sum()
-          pie_data["จำนวนเงิน"] = pie_data["จำนวนเงิน"].abs()
+          if pie_view_level == "หมวดหมู่หลัก":
+            pie_data = filtered_expense_df.groupby(
+                "หมวดหมู่หลัก", as_index=False
+            )["จำนวนเงิน"].sum()
+            pie_data["จำนวนเงิน"] = pie_data["จำนวนเงิน"].abs()
+            fig_pie = px.pie(
+                pie_data,
+                values="จำนวนเงิน",
+                names="หมวดหมู่หลัก",
+                hole=0.75,
+                color="หมวดหมู่หลัก",
+                color_discrete_map=cat_color_map,
+            )
+          else:
+            pie_data = filtered_expense_df.groupby(
+                ["หมวดหมู่หลัก", "หมวดหมู่ย่อย"], as_index=False
+            )["จำนวนเงิน"].sum()
+            pie_data["จำนวนเงิน"] = pie_data["จำนวนเงิน"].abs()
+            pie_data["ชื่อแสดงผล"] = (
+                pie_data["หมวดหมู่ย่อย"]
+                + " ("
+                + pie_data["หมวดหมู่หลัก"]
+                + ")"
+            )
+            fig_pie = px.pie(
+                pie_data,
+                values="จำนวนเงิน",
+                names="ชื่อแสดงผล",
+                hole=0.75,
+                color_discrete_sequence=SUB_CAT_PALETTE,
+            )
 
-          fig_pie = px.pie(
-              pie_data,
-              values="จำนวนเงิน",
-              names="หมวดหมู่หลัก",
-              hole=0.78,
-              color="หมวดหมู่หลัก",
-              color_discrete_map=cat_color_map,
-          )
           fig_pie.update_traces(
               textposition="outside",
               textinfo="percent+label",
@@ -2944,7 +3120,7 @@ else:
           )
           st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
         else:
-          st.info("กรุณาติ๊กเลือกอย่างน้อย 1 หมวดหมู่")
+          st.info("กรุณาเลือกหมวดหมู่เพื่อแสดงกราฟ")
 
       with col_chart2:
         if not filtered_expense_df.empty:
@@ -2953,29 +3129,35 @@ else:
           )["จำนวนเงิน"].sum()
           sub_data["จำนวนเงิน"] = sub_data["จำนวนเงิน"].abs()
 
-          if len(selected_main_filter) == len(all_main_cats):
+          show_all_sub = st.checkbox(
+              "แสดงหมวดหมู่ย่อยทั้งหมดในกราฟแท่ง (Show All)",
+              value=(len(selected_main_filter) < len(all_main_cats)),
+              key="show_all_sub_bar",
+          )
+          if not show_all_sub:
             sub_data = sub_data.sort_values(
                 by="จำนวนเงิน", ascending=False
-            ).head(8)
+            ).head(10)
           else:
             sub_data = sub_data.sort_values(by="จำนวนเงิน", ascending=False)
 
-          fig_bar = px.bar(
+          fig_bar_sub = px.bar(
               sub_data,
               x="จำนวนเงิน",
               y="หมวดหมู่ย่อย",
               color="หมวดหมู่หลัก",
               orientation="h",
               color_discrete_map=cat_color_map,
+              hover_data={"หมวดหมู่หลัก": True, "จำนวนเงิน": ":,.2f"},
           )
-          fig_bar.update_traces(
+          fig_bar_sub.update_traces(
               marker_line_width=0,
               opacity=0.9,
               texttemplate="฿%{x:,.0f}",
               textposition="outside",
               textfont=dict(family="Poppins", size=11),
           )
-          fig_bar.update_layout(
+          fig_bar_sub.update_layout(
               plot_bgcolor="rgba(0,0,0,0)",
               paper_bgcolor="rgba(0,0,0,0)",
               xaxis=dict(
@@ -2988,9 +3170,58 @@ else:
                   tickfont=dict(family="Poppins", size=12),
               ),
               showlegend=False,
-              margin=dict(t=10, b=10, l=0, r=30),
+              margin=dict(t=10, b=10, l=0, r=40),
           )
-          st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
+          st.plotly_chart(
+              fig_bar_sub, use_container_width=True, theme="streamlit"
+          )
+
+      # 📋 ตารางสรุปสถิติแยกตามหมวดหมู่ย่อย (Sub-category Breakdown Table)
+      if not filtered_expense_df.empty:
+        with st.expander(
+            "📊 ตารางสรุปสถิติเจาะลึกแยกตามหมวดหมู่ย่อย (Sub-category"
+            " Analytics)",
+            expanded=True,
+        ):
+          total_filtered_exp = filtered_expense_df["จำนวนเงิน"].sum()
+          sub_stat_df = (
+              filtered_expense_df.groupby(
+                  ["หมวดหมู่หลัก", "หมวดหมู่ย่อย"], as_index=False
+              )
+              .agg(
+                  จำนวนครั้ง=("จำนวนเงิน", "count"),
+                  ยอดรวม=("จำนวนเงิน", "sum"),
+                  เฉลี่ยต่อครั้ง=("จำนวนเงิน", "mean"),
+              )
+              .sort_values(by="ยอดรวม", ascending=False)
+          )
+
+          sub_stat_df["สัดส่วน (%)"] = sub_stat_df["ยอดรวม"].apply(
+              lambda x: (
+                  f"{(x / total_filtered_exp * 100):.1f}%"
+                  if total_filtered_exp > 0
+                  else "0.0%"
+              )
+          )
+          sub_stat_df["ยอดรวม"] = sub_stat_df["ยอดรวม"].apply(
+              lambda x: f"฿ {x:,.2f}"
+          )
+          sub_stat_df["เฉลี่ยต่อครั้ง"] = sub_stat_df["เฉลี่ยต่อครั้ง"].apply(
+              lambda x: f"฿ {x:,.2f}"
+          )
+
+          st.dataframe(
+              sub_stat_df[[
+                  "หมวดหมู่หลัก",
+                  "หมวดหมู่ย่อย",
+                  "จำนวนครั้ง",
+                  "ยอดรวม",
+                  "เฉลี่ยต่อครั้ง",
+                  "สัดส่วน (%)",
+              ]],
+              use_container_width=True,
+              hide_index=True,
+          )
 
       # 🔥 🪐 Deep Dive Infographic
       st.markdown("---")
@@ -3027,7 +3258,9 @@ else:
         )
         fig_tree.update_traces(
             textinfo="label+value+percent parent",
-            texttemplate="<b>%{label}</b><br>฿%{value:,.0f}<br>(%{percentParent:.1%})",
+            texttemplate=(
+                "<b>%{label}</b><br>฿%{value:,.0f}<br>(%{percentParent:.1%})"
+            ),
             hovertemplate=(
                 "<b>%{label}</b><br>ยอดรวม: ฿%{value:,.2f}<br>สัดส่วนในหมวดนี้:"
                 " %{percentParent:.2%}<extra></extra>"
@@ -3062,16 +3295,18 @@ else:
     df_debt = (
         pd.DataFrame(debt_data)
         if debt_data
-        else pd.DataFrame(columns=[
-            "ID",
-            "ชื่อคนติดเงิน",
-            "รายการ/รายละเอียด",
-            "จำนวนเงิน",
-            "กระเป๋าที่จ่าย",
-            "วันที่สร้าง",
-            "สถานะ",
-            "วันที่คืน",
-        ])
+        else pd.DataFrame(
+            columns=[
+                "ID",
+                "ชื่อคนติดเงิน",
+                "รายการ/รายละเอียด",
+                "จำนวนเงิน",
+                "กระเป๋าที่จ่าย",
+                "วันที่สร้าง",
+                "สถานะ",
+                "วันที่คืน",
+            ]
+        )
     )
 
     pending_df = (
@@ -3222,7 +3457,8 @@ else:
 
     st.markdown("---")
     st.markdown(
-        "<p class='quick-add-text'>📋 ตารางประวัติหารค่าใช้จ่ายและคนติดเงินทั้งหมด</p>",
+        "<p class='quick-add-text'>📋"
+        " ตารางประวัติหารค่าใช้จ่ายและคนติดเงินทั้งหมด</p>",
         unsafe_allow_html=True,
     )
     st.caption(
@@ -3360,9 +3596,7 @@ else:
             "<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True
         )
     else:
-      st.info(
-          "ยังไม่มีเป้าหมายการออม ลองเพิ่มเป้าหมายแรกด้านล่างได้เลยครับ! ✨"
-      )
+      st.info("ยังไม่มีเป้าหมายการออม ลองเพิ่มเป้าหมายแรกด้านล่างได้เลยครับ! ✨")
 
     st.markdown("---")
 
@@ -3436,7 +3670,8 @@ else:
       )
 
       if st.button(
-          "💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)", use_container_width=True
+          "💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)",
+          use_container_width=True,
       ):
         goal_sheet.clear()
         goal_sheet.update(
@@ -3520,16 +3755,15 @@ else:
       qa_sheet.clear()
       qa_sheet.update(
           range_name="A1",
-          values=[edited_qa.columns.values.tolist()] + edited_qa.values.tolist(),
+          values=[edited_qa.columns.values.tolist()]
+          + edited_qa.values.tolist(),
       )
       fetch_quick_adds.clear()
       st.success("Quick adds updated!")
       st.rerun()
 
     st.markdown("---")
-    st.subheader(
-        "✏️ Raw Data Editor & Explorer (จัดการและค้นหาข้อมูลดิบ)"
-    )
+    st.subheader("✏️ Raw Data Editor & Explorer (จัดการและค้นหาข้อมูลดิบ)")
 
     if not df.empty:
       with st.expander(
@@ -3559,8 +3793,8 @@ else:
               .astype(str)
               .str.contains(search_txt, case=False, na=False)
               | df_explored["หมวดหมู่"]
-                  .astype(str)
-                  .str.contains(search_txt, case=False, na=False)
+              .astype(str)
+              .str.contains(search_txt, case=False, na=False)
           ]
         if filter_type != "ทั้งหมด":
           df_explored = df_explored[df_explored["ประเภท"] == filter_type]
@@ -3588,9 +3822,7 @@ else:
             hide_index=True,
         )
 
-      st.markdown(
-          "#### 🛠️ ตารางแก้ไขข้อมูลดิบ (Full Editor - บันทึกลงคลาวด์)"
-      )
+      st.markdown("#### 🛠️ ตารางแก้ไขข้อมูลดิบ (Full Editor - บันทึกลงคลาวด์)")
       st.caption(
           "💡 รายการล่าสุดอยู่แถวบนสุดเสมอ | คอลัมน์ 'ประเภท' และ 'กระเป๋า'"
           " เป็นเมนูดรอปดาวน์คลิกเลือกได้เลยครับ"
@@ -3752,7 +3984,7 @@ else:
     m1, m2, m3, m4 = st.columns(4)
     m1.markdown(
         "<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน"
-        f" (EMI)</div><div class='metric-value'"
+        " (EMI)</div><div class='metric-value'"
         f" style='color:#f9744b;'>฿{emi_amount:,.2f}</div></div>",
         unsafe_allow_html=True,
     )
