@@ -2813,7 +2813,6 @@ else:
       ].copy()
 
       if not df_bar_metric.empty:
-        # 🔎 เพิ่มตัวกรองทั้งหมวดหมู่หลัก และ หมวดหมู่ย่อย ในหน้าเดียวกัน
         c_f_main, c_f_sub, c_f_color = st.columns([1.5, 1.5, 1.2])
         with c_f_main:
           available_cats_bar = sorted([
@@ -2998,7 +2997,7 @@ else:
     st.markdown("---")
 
     # ==========================================
-    # 🔥 🍩 Expense Analysis (เพิ่มการดูเจาะลึกหมวดหมู่ย่อยเต็มรูปแบบ)
+    # 🔥 🍩 Expense Analysis (เจาะลึกหมวดหมู่ย่อย - แก้ไขบั๊ก NFKC เรียบร้อย)
     # ==========================================
     st.markdown(
         "<p class='quick-add-text'>🍩 Expense Analysis"
@@ -3176,37 +3175,38 @@ else:
               fig_bar_sub, use_container_width=True, theme="streamlit"
           )
 
-      # 📋 ตารางสรุปสถิติแยกตามหมวดหมู่ย่อย (Sub-category Breakdown Table)
+      # 📋 ตารางสรุปสถิติแยกตามหมวดหมู่ย่อย (ใช้ตัวแปรภาษาอังกฤษใน agg เพื่อป้องกันบั๊กสระอำ)
       if not filtered_expense_df.empty:
         with st.expander(
             "📊 ตารางสรุปสถิติเจาะลึกแยกตามหมวดหมู่ย่อย (Sub-category"
             " Analytics)",
             expanded=True,
         ):
-          total_filtered_exp = filtered_expense_df["จำนวนเงิน"].sum()
+          total_filtered_exp = float(filtered_expense_df["จำนวนเงิน"].sum())
           sub_stat_df = (
               filtered_expense_df.groupby(
                   ["หมวดหมู่หลัก", "หมวดหมู่ย่อย"], as_index=False
-              )
+              )["จำนวนเงิน"]
               .agg(
-                  จำนวนครั้ง=("จำนวนเงิน", "count"),
-                  ยอดรวม=("จำนวนเงิน", "sum"),
-                  เฉลี่ยต่อครั้ง=("จำนวนเงิน", "mean"),
+                  tx_count="count",
+                  total_amt="sum",
+                  avg_amt="mean",
               )
-              .sort_values(by="ยอดรวม", ascending=False)
+              .sort_values(by="total_amt", ascending=False)
           )
 
-          sub_stat_df["สัดส่วน (%)"] = sub_stat_df["ยอดรวม"].apply(
+          sub_stat_df["สัดส่วน (%)"] = sub_stat_df["total_amt"].apply(
               lambda x: (
                   f"{(x / total_filtered_exp * 100):.1f}%"
                   if total_filtered_exp > 0
                   else "0.0%"
               )
           )
-          sub_stat_df["ยอดรวม"] = sub_stat_df["ยอดรวม"].apply(
+          sub_stat_df["จำนวนครั้ง"] = sub_stat_df["tx_count"]
+          sub_stat_df["ยอดรวม"] = sub_stat_df["total_amt"].apply(
               lambda x: f"฿ {x:,.2f}"
           )
-          sub_stat_df["เฉลี่ยต่อครั้ง"] = sub_stat_df["เฉลี่ยต่อครั้ง"].apply(
+          sub_stat_df["เฉลี่ยต่อครั้ง"] = sub_stat_df["avg_amt"].apply(
               lambda x: f"฿ {x:,.2f}"
           )
 
