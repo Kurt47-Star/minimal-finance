@@ -348,6 +348,43 @@ def parse_clean_datetime(date_series):
   return dt
 
 
+def find_matching_advance_row(all_rows, created_str, debtor_name, amount_val):
+  """ค้นหาหมายเลขแถว (1-based) ของรายการ '🤝 เงินทดจ่าย' ในชีตหลักเพื่อแปลงเป็นรายจ่ายโดยไม่หักเงินซ้ำ"""
+  target_amt = float(amount_val)
+  created_clean = str(created_str).strip()
+  debtor_clean = str(debtor_name).strip()
+
+  # รอบที่ 1: จับคู่ตรงเป๊ะด้วยวันเวลา + ประเภท + จำนวนเงิน
+  for i, row in enumerate(all_rows):
+    if len(row) < 4:
+      continue
+    r_date = str(row[0]).strip()
+    r_type = str(row[1]).strip()
+    try:
+      r_amt = float(row[3])
+    except (ValueError, TypeError):
+      continue
+    if "เงินทดจ่าย" in r_type and "รับคืน" not in r_type:
+      if r_date == created_clean and abs(r_amt - target_amt) < 0.01:
+        return i + 1
+
+  # รอบที่ 2: เผื่อกรณีรูปแบบวันที่ถูก Google Sheets ปรับฟอร์แมต ให้จับคู่จากชื่อลูกหนี้ + จำนวนเงิน
+  for i, row in enumerate(all_rows):
+    if len(row) < 4:
+      continue
+    r_type = str(row[1]).strip()
+    r_cat = str(row[2]).strip()
+    try:
+      r_amt = float(row[3])
+    except (ValueError, TypeError):
+      continue
+    if "เงินทดจ่าย" in r_type and "รับคืน" not in r_type:
+      if debtor_clean and debtor_clean in r_cat and abs(r_amt - target_amt) < 0.01:
+        return i + 1
+
+  return None
+
+
 def load_data():
   records = fetch_main_data()
   if not records:
@@ -608,6 +645,7 @@ PRIORITY_LEVELS = [
 def calculate_savings_metrics(df_source):
   if df_source.empty or "ประเภท" not in df_source.columns:
     return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+  # แก้บั๊ก: ยกเว้น โอนย้าย|transfer|ปรับยอด เพื่อไม่ให้นับซ้ำตอนโอนเข้า 🌸 ออมสิน
   dep_mask = (
       df_source["ประเภท"]
       .astype(str)
@@ -623,7 +661,7 @@ def calculate_savings_metrics(df_source):
       .astype(str)
       .str.contains("ออมสิน|aomsin|เงินออม", case=False, na=False)
   ) & ~df_source["ประเภท"].astype(str).str.contains(
-      "ถอน|กู้|คืน|รายจ่าย", case=False, na=False
+      "ถอน|กู้|คืน|รายจ่าย|โอนย้าย|transfer|ปรับยอด", case=False, na=False
   )
 
   with_mask = (
@@ -2541,11 +2579,12 @@ else:
             key="budget_editor_v12",
         )
         if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
+          clean_b = edited_budgets.fillna("")
           budget_sheet.clear()
           budget_sheet.update(
               range_name="A1",
-              values=[edited_budgets.columns.values.tolist()]
-              + edited_budgets.values.tolist(),
+              values=[clean_b.columns.values.tolist()]
+              + clean_b.values.tolist(),
           )
           fetch_budgets.clear()
           st.success("อัปเดตงบประมาณเรียบร้อย!")
@@ -2706,7 +2745,7 @@ else:
     st.markdown("---")
 
     # ==========================================
-    # 🔥 📊 Periodic Bar Analysis (เพิ่มการกรองและแยกสีระดับหมวดหมู่ย่อย)
+    # 🔥 📊 Periodic Bar Analysis
     # ==========================================
     def clean_type_name(t_str):
       t = str(t_str).strip()
@@ -2997,7 +3036,7 @@ else:
     st.markdown("---")
 
     # ==========================================
-    # 🔥 🍩 Expense Analysis (เจาะลึกหมวดหมู่ย่อย - แก้ไขบั๊ก NFKC เรียบร้อย)
+    # 🔥 🍩 Expense Analysis
     # ==========================================
     st.markdown(
         "<p class='quick-add-text'>🍩 Expense Analysis"
@@ -3175,7 +3214,6 @@ else:
               fig_bar_sub, use_container_width=True, theme="streamlit"
           )
 
-      # 📋 ตารางสรุปสถิติแยกตามหมวดหมู่ย่อย (ใช้ตัวแปรภาษาอังกฤษใน agg เพื่อป้องกันบั๊กสระอำ)
       if not filtered_expense_df.empty:
         with st.expander(
             "📊 ตารางสรุปสถิติเจาะลึกแยกตามหมวดหมู่ย่อย (Sub-category"
@@ -3277,7 +3315,7 @@ else:
       st.info("ไม่มีข้อมูลรายจ่ายบันทึกไว้ในรอบเดือนนี้ครับ")
 
   # ==========================================
-  # 🤝 Tab 3: ลูกหนี้ & หารบิล
+  # 🤝 Tab 3: ลูกหนี้ & หารบิล (เพิ่มระบบยกเลิกไม่ต้องจ่าย / ตัดจบ)
   # ==========================================
   with tab3:
     st.markdown(
@@ -3286,9 +3324,8 @@ else:
         unsafe_allow_html=True,
     )
     st.caption(
-        "💡 สำหรับจดเวลาหารค่าข้าวกับแฟนหรือเพื่อน"
-        " โดยระบบจะหักยอดเงินสดออกก่อน และคืนเข้า Net Balance"
-        " เมื่อกดยืนยันว่าคืนเงินแล้ว (ไม่ปนกับรายจ่ายจริง)"
+        "💡 สำหรับจดเวลาหารค่าข้าวหรือซื้อของเข้าบ้าน ระบบจะหักเงินออกจากกระเป๋าไว้ก่อน"
+        " เมื่อได้รับคืนให้กดยืนยันรับคืน หรือถ้าเป็นส่วนกลางที่ไม่ต้องคืนสามารถกด 'ยกเลิกไม่ต้องจ่าย' ได้ทันที"
     )
 
     debt_data = fetch_receivables()
@@ -3309,13 +3346,22 @@ else:
         )
     )
 
+    DEBT_STATUS_PENDING = "⏳ รอคืนเงิน"
+    DEBT_STATUS_PAID = "✅ คืนแล้ว"
+    DEBT_STATUS_WAIVED = "🚫 ยกเลิก (ไม่ต้องคืน)"
+
     pending_df = (
-        df_debt[df_debt["สถานะ"] == "⏳ รอคืนเงิน"]
+        df_debt[df_debt["สถานะ"] == DEBT_STATUS_PENDING]
         if not df_debt.empty
         else pd.DataFrame()
     )
     paid_df = (
-        df_debt[df_debt["สถานะ"] == "✅ คืนแล้ว"]
+        df_debt[df_debt["สถานะ"] == DEBT_STATUS_PAID]
+        if not df_debt.empty
+        else pd.DataFrame()
+    )
+    waived_df = (
+        df_debt[df_debt["สถานะ"] == DEBT_STATUS_WAIVED]
         if not df_debt.empty
         else pd.DataFrame()
     )
@@ -3330,8 +3376,13 @@ else:
         if not paid_df.empty
         else 0.0
     )
+    total_waived = (
+        pd.to_numeric(waived_df["จำนวนเงิน"], errors="coerce").sum()
+        if not waived_df.empty
+        else 0.0
+    )
 
-    m_d1, m_d2 = st.columns(2)
+    m_d1, m_d2, m_d3 = st.columns(3)
     m_d1.markdown(
         "<div class='metric-card'><div class='metric-title'>⏳"
         " ยอดเงินที่คนอื่นยังติดอยู่ (รอคืน)</div><div class='metric-value'"
@@ -3344,20 +3395,28 @@ else:
         f" style='color:#2a9d8f;'>฿{total_paid:,.2f}</div></div>",
         unsafe_allow_html=True,
     )
+    m_d3.markdown(
+        "<div class='metric-card'><div class='metric-title'>🚫"
+        " ยกเลิก / ตัดจบ (ไม่ต้องคืน)</div><div class='metric-value'"
+        f" style='color:#8e8e93;'>฿{total_waived:,.2f}</div></div>",
+        unsafe_allow_html=True,
+    )
 
     st.markdown("---")
 
-    c_add_debt, c_confirm_debt = st.columns([1.2, 1])
+    c_add_debt, c_manage_debt = st.columns([1.1, 1.1])
     with c_add_debt:
       with st.expander(
-          "➕ เพิ่มรายการคนติดเงิน / หารค่าข้าว (Add Receivable)", expanded=True
+          "➕ เพิ่มรายการคนติดเงิน / หารค่าใช้จ่าย (Add Receivable)",
+          expanded=True,
       ):
         with st.form("add_debt_form", clear_on_submit=True):
           d_who = st.text_input(
-              "ชื่อคนติดเงิน (เช่น แฟน, เพื่อน A)", placeholder="ระบุชื่อ..."
+              "ชื่อคนติดเงิน (เช่น ฟ้า, เพื่อนร่วมบ้าน)",
+              placeholder="ระบุชื่อ...",
           )
           d_desc = st.text_input(
-              "รายการ (เช่น หารค่าข้าวเย็น, ค่าชาบู)",
+              "รายการ (เช่น หารค่าข้าวเย็น, ซื้อของเข้าบ้าน)",
               placeholder="รายละเอียดบิล...",
           )
           d_amt = st.number_input(
@@ -3370,79 +3429,116 @@ else:
           )
           d_wallet = st.selectbox("ทดจ่ายออกจากกระเป๋าไหน?", wallet_list)
 
-          if (
-              st.form_submit_button(
-                  "💾 บันทึกคนติดเงิน (ตัดเงินทดจ่าย)", use_container_width=True
-              )
-              and d_amt is not None
-              and d_amt > 0
+          if st.form_submit_button(
+              "💾 บันทึกคนติดเงิน (ตัดเงินทดจ่าย)", use_container_width=True
           ):
-            new_id = len(df_debt) + 1
-            now_str = datetime.datetime.now(TZ_TH).strftime("%Y-%m-%d %H:%M:%S")
+            if not d_who.strip():
+              st.error("กรุณาระบุชื่อคนติดเงินครับ")
+            elif d_amt is None or d_amt <= 0:
+              st.error("กรุณาระบุจำนวนเงินให้ถูกต้องครับ")
+            else:
+              # แก้บั๊ก ID ซ้ำ: ใช้ max(ID) + 1 แทน len() + 1
+              if not df_debt.empty and "ID" in df_debt.columns:
+                max_id_val = pd.to_numeric(
+                    df_debt["ID"], errors="coerce"
+                ).max()
+                new_id = int(max_id_val) + 1 if pd.notnull(max_id_val) else 1
+              else:
+                new_id = 1
 
-            debt_sheet.append_row([
-                new_id,
-                d_who,
-                d_desc,
-                d_amt,
-                d_wallet,
-                now_str,
-                "⏳ รอคืนเงิน",
-                "",
-            ])
-            sheet.append_row([
-                now_str,
-                "🤝 เงินทดจ่าย",
-                f"ลูกหนี้: {d_who}",
-                d_amt,
-                f"หารบิล: {d_desc}",
-                d_wallet,
-            ])
+              now_str = datetime.datetime.now(TZ_TH).strftime(
+                  "%Y-%m-%d %H:%M:%S"
+              )
 
-            fetch_receivables.clear()
-            fetch_main_data.clear()
-            st.toast("บันทึกรายการหารบิลและหักยอดทดจ่ายเรียบร้อย! ✨")
-            st.rerun()
+              debt_sheet.append_row([
+                  new_id,
+                  d_who.strip(),
+                  d_desc.strip(),
+                  float(d_amt),
+                  d_wallet,
+                  now_str,
+                  DEBT_STATUS_PENDING,
+                  "",
+              ])
+              sheet.append_row([
+                  now_str,
+                  "🤝 เงินทดจ่าย",
+                  f"ลูกหนี้: {d_who.strip()}",
+                  float(d_amt),
+                  f"หารบิล: {d_desc.strip()}",
+                  d_wallet,
+              ])
 
-    with c_confirm_debt:
-      with st.expander("🎉 ยืนยันรับคืนเงินแล้ว (Mark as Paid)", expanded=True):
+              fetch_receivables.clear()
+              fetch_main_data.clear()
+              st.toast("บันทึกรายการหารบิลและหักยอดทดจ่ายเรียบร้อย! ✨")
+              st.rerun()
+
+    with c_manage_debt:
+      with st.expander(
+          "⚡ จัดการรายการค้าง (รับคืนเงิน / ยกเลิกไม่ต้องจ่าย)", expanded=True
+      ):
         if not pending_df.empty:
           pending_options = []
           for idx, r in pending_df.iterrows():
-            pending_options.append((
-                f"#{r['ID']} - {r['ชื่อคนติดเงิน']}: {r['รายการ/รายละเอียด']}"
-                f" (฿{r['จำนวนเงิน']})",
-                idx + 2,
-                r["จำนวนเงิน"],
-                r["ชื่อคนติดเงิน"],
-                r["กระเป๋าที่จ่าย"],
-            ))
+            pending_options.append({
+                "label": (
+                    f"#{r['ID']} - {r['ชื่อคนติดเงิน']}:"
+                    f" {r['รายการ/รายละเอียด']} (฿{float(r['จำนวนเงิน']):,.2f})"
+                ),
+                "row_idx": int(idx) + 2,
+                "amt": float(r["จำนวนเงิน"]),
+                "name": str(r["ชื่อคนติดเงิน"]).strip(),
+                "desc": str(r["รายการ/รายละเอียด"]).strip(),
+                "wallet": str(r["กระเป๋าที่จ่าย"]).strip(),
+                "created": str(r["วันที่สร้าง"]).strip(),
+            })
 
           selected_debt_label = st.selectbox(
-              "เลือกรายการที่ได้รับเงินคืนแล้ว:",
-              [opt[0] for opt in pending_options],
+              "เลือกรายการที่ต้องการดำเนินการ:",
+              [opt["label"] for opt in pending_options],
+              key="manage_debt_select",
           )
-          return_wallet = st.selectbox(
-              "รับเงินคืนเข้ากระเป๋าไหน?", wallet_list, key="ret_wallet_select"
+          selected_item = next(
+              (
+                  opt
+                  for opt in pending_options
+                  if opt["label"] == selected_debt_label
+              ),
+              None,
           )
 
-          if st.button(
-              "✅ ยืนยันว่าคืนเงินแล้ว (บวกกลับเข้า Net Balance)",
-              use_container_width=True,
-          ):
-            for label, r_idx, d_val, d_name, _ in pending_options:
-              if label == selected_debt_label:
+          debt_action_mode = st.radio(
+              "เลือกรูปแบบการปิดยอด:",
+              ["✅ ได้รับเงินคืนแล้ว", "🚫 ยกเลิกไม่ต้องจ่าย (ตัดจบ)"],
+              horizontal=True,
+              key="debt_action_mode_radio",
+          )
+
+          if debt_action_mode == "✅ ได้รับเงินคืนแล้ว":
+            return_wallet = st.selectbox(
+                "รับเงินคืนเข้ากระเป๋าไหน?",
+                wallet_list,
+                key="ret_wallet_select",
+            )
+            if st.button(
+                "✅ ยืนยันว่าคืนเงินแล้ว (บวกกลับเข้า Net Balance)",
+                use_container_width=True,
+            ):
+              if selected_item:
                 now_str = datetime.datetime.now(TZ_TH).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )
-                debt_sheet.update_cell(int(r_idx), 7, "✅ คืนแล้ว")
-                debt_sheet.update_cell(int(r_idx), 8, now_str)
+                debt_sheet.update_cell(
+                    selected_item["row_idx"], 7, DEBT_STATUS_PAID
+                )
+                debt_sheet.update_cell(selected_item["row_idx"], 8, now_str)
                 sheet.append_row([
                     now_str,
                     "🤝 รับคืนเงินทดจ่าย",
-                    f"ลูกหนี้: {d_name}",
-                    float(d_val),
-                    "ได้รับคืนเงินที่ทดจ่ายไปก่อน",
+                    f"ลูกหนี้: {selected_item['name']}",
+                    selected_item["amt"],
+                    f"ได้รับคืนเงินทดจ่าย: {selected_item['desc']}",
                     return_wallet,
                 ])
 
@@ -3451,6 +3547,85 @@ else:
                 st.success(
                     "อัปเดตรับคืนเงินและเพิ่มยอดใน Net Balance เรียบร้อยครับ!"
                 )
+                st.rerun()
+          else:
+            st.caption(
+                "💡 ยอดเงินถูกหักจากกระเป๋าไปแล้วตั้งแต่ตอนสร้างบิล"
+                " การกดยกเลิกจะตัดออกจากรายการรอคืนโดย **ไม่หักเงินในกระเป๋าซ้ำ**"
+            )
+            convert_to_expense = st.checkbox(
+                "📊 แปลงรายการนี้เป็น 'รายจ่ายจริง' ใน Dashboard ด้วย"
+                " (เช่น ค่าส่วนกลางบ้าน)",
+                value=True,
+                key="waive_convert_exp",
+            )
+
+            waive_exp_cat = "ค่าส่วนกลางบ้าน"
+            if convert_to_expense:
+              exp_cat_choices = []
+              if "💸 รายจ่าย" in SUB_CATEGORIES:
+                for m_c, s_list in SUB_CATEGORIES["💸 รายจ่าย"].items():
+                  exp_cat_choices.append(m_c)
+                  for s_c in s_list:
+                    if s_c and s_c != "ทั่วไป":
+                      exp_cat_choices.append(f"{m_c}: {s_c}")
+              exp_cat_choices = sorted(list(set(exp_cat_choices)))
+              if "ค่าส่วนกลางบ้าน" not in exp_cat_choices:
+                exp_cat_choices = ["ค่าส่วนกลางบ้าน"] + exp_cat_choices
+              waive_exp_cat = st.selectbox(
+                  "เลือกหมวดหมู่รายจ่ายสำหรับ Dashboard:",
+                  exp_cat_choices,
+                  key="waive_exp_cat_select",
+              )
+
+            if st.button(
+                "🚫 ยืนยันยกเลิกไม่ต้องจ่าย (ตัดจบรายการนี้)",
+                use_container_width=True,
+            ):
+              if selected_item:
+                now_str = datetime.datetime.now(TZ_TH).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                debt_sheet.update_cell(
+                    selected_item["row_idx"], 7, DEBT_STATUS_WAIVED
+                )
+                debt_sheet.update_cell(
+                    selected_item["row_idx"], 8, f"ยกเลิกเมื่อ {now_str}"
+                )
+
+                if convert_to_expense:
+                  all_main_rows = sheet.get_all_values()
+                  match_row_idx = find_matching_advance_row(
+                      all_main_rows,
+                      selected_item["created"],
+                      selected_item["name"],
+                      selected_item["amt"],
+                  )
+                  if match_row_idx:
+                    sheet.update_cell(match_row_idx, 2, "รายจ่าย")
+                    sheet.update_cell(match_row_idx, 3, waive_exp_cat)
+                    sheet.update_cell(
+                        match_row_idx,
+                        5,
+                        (
+                            f"{selected_item['desc']} (ตัดจบไม่รับคืน:"
+                            f" {selected_item['name']})"
+                        ),
+                    )
+                    st.toast(
+                        "ตัดจบและแปลงเป็นรายจ่ายใน Dashboard เรียบร้อย!"
+                        " (ไม่หักเงินซ้ำ) ✨"
+                    )
+                  else:
+                    st.warning(
+                        "ปิดยอดลูกหนี้เรียบร้อยแล้ว แต่ไม่พบแถว 'เงินทดจ่าย'"
+                        " เดิมในชีตหลัก จึงไม่ได้แปลงเป็นรายจ่าย (เพื่อป้องกันการหักเงินซ้ำ)"
+                    )
+                else:
+                  st.toast("ยกเลิกรายการรอคืนเรียบร้อย! ✨")
+
+                fetch_receivables.clear()
+                fetch_main_data.clear()
                 st.rerun()
         else:
           st.info("ไม่มีรายการคนติดเงินค้างอยู่ตอนนี้ครับ 🎉")
@@ -3471,16 +3646,36 @@ else:
           df_debt,
           use_container_width=True,
           num_rows="dynamic",
-          key="editor_debt_v79",
+          column_config={
+              "สถานะ": st.column_config.SelectboxColumn(
+                  "สถานะ",
+                  options=[
+                      DEBT_STATUS_PENDING,
+                      DEBT_STATUS_PAID,
+                      DEBT_STATUS_WAIVED,
+                  ],
+                  required=True,
+              ),
+              "กระเป๋าที่จ่าย": st.column_config.SelectboxColumn(
+                  "กระเป๋าที่จ่าย",
+                  options=wallet_list,
+                  required=True,
+              ),
+              "จำนวนเงิน": st.column_config.NumberColumn(
+                  "จำนวนเงิน (THB)", format="฿ %.2f"
+              ),
+          },
+          key="editor_debt_v80",
       )
       if st.button(
           "💾 บันทึกการแก้ไข/ลบข้อมูลประวัติคนติดเงิน", use_container_width=True
       ):
+        clean_debt = edited_debt.fillna("")
         debt_sheet.clear()
         debt_sheet.update(
             range_name="A1",
-            values=[edited_debt.columns.values.tolist()]
-            + edited_debt.values.tolist(),
+            values=[clean_debt.columns.values.tolist()]
+            + clean_debt.values.tolist(),
         )
         fetch_receivables.clear()
         st.success("อัปเดตข้อมูลคนติดเงินเรียบร้อย! ✨")
@@ -3673,11 +3868,12 @@ else:
           "💾 บันทึกการเปลี่ยนแปลงเป้าหมาย (Save Goals)",
           use_container_width=True,
       ):
+        clean_goals = edited_goals.fillna("")
         goal_sheet.clear()
         goal_sheet.update(
             range_name="A1",
-            values=[edited_goals.columns.values.tolist()]
-            + edited_goals.values.tolist(),
+            values=[clean_goals.columns.values.tolist()]
+            + clean_goals.values.tolist(),
         )
         fetch_goals.clear()
         st.success("อัปเดตรายการเป้าหมายออมเงินเรียบร้อย! ✨")
@@ -3704,10 +3900,11 @@ else:
       if st.button(
           "💾 บันทึกรายชื่อกระเป๋าเงิน (Save Wallets)", use_container_width=True
       ):
+        clean_w = edited_wallets.fillna("")
         wallet_sheet.clear()
         wallet_sheet.update(
             range_name="A1",
-            values=[["ชื่อกระเป๋า"]] + edited_wallets.values.tolist(),
+            values=[["ชื่อกระเป๋า"]] + clean_w.values.tolist(),
         )
         fetch_wallets.clear()
         st.success("อัปเดตรายชื่อธนาคารและกระเป๋าเงินเรียบร้อย! ✨")
@@ -3736,11 +3933,12 @@ else:
         key="editor_cat_v79",
     )
     if st.button("💾 Save Categories", use_container_width=True):
+      clean_cat = edited_cat.fillna("")
       cat_sheet.clear()
       cat_sheet.update(
           range_name="A1",
-          values=[edited_cat.columns.values.tolist()]
-          + edited_cat.values.tolist(),
+          values=[clean_cat.columns.values.tolist()]
+          + clean_cat.values.tolist(),
       )
       fetch_categories.clear()
       st.success("Categories updated! ✨")
@@ -3752,11 +3950,11 @@ else:
         qa_df, use_container_width=True, num_rows="dynamic", key="editor_qa_v79"
     )
     if st.button("💾 Save Quick Adds", use_container_width=True):
+      clean_qa = edited_qa.fillna("")
       qa_sheet.clear()
       qa_sheet.update(
           range_name="A1",
-          values=[edited_qa.columns.values.tolist()]
-          + edited_qa.values.tolist(),
+          values=[clean_qa.columns.values.tolist()] + clean_qa.values.tolist(),
       )
       fetch_quick_adds.clear()
       st.success("Quick adds updated!")
@@ -3875,12 +4073,13 @@ else:
           key="editor_finance_v79",
       )
       if st.button("💾 Save Data to Cloud", use_container_width=True):
+        clean_save_df = edited_df.fillna("")
+        clean_save_df["วันที่"] = clean_save_df["วันที่"].astype(str)
         sheet.clear()
-        edited_df["วันที่"] = edited_df["วันที่"].astype(str)
         sheet.update(
             range_name="A1",
-            values=[edited_df.columns.values.tolist()]
-            + edited_df.values.tolist(),
+            values=[clean_save_df.columns.values.tolist()]
+            + clean_save_df.values.tolist(),
         )
         fetch_main_data.clear()
         st.success("Data updated!")
