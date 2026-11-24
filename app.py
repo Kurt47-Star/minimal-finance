@@ -134,6 +134,18 @@ def init_connection():
 client = init_connection()
 spreadsheet_name = "Minimal Finance Pro"
 
+LOAN_HEADERS = [
+    "เงินต้น",
+    "อัตราดอกเบี้ยปี",
+    "ระยะเวลาเดือน",
+    "งวดที่จ่ายแล้ว",
+    "เดือนปีที่จ่ายล่าสุด",
+    "ชื่อสัญญา",
+    "แหล่งเงิน (Goal)",
+    "กระเป๋าที่รับเงิน",
+    "สถานะ",
+]
+
 
 # 🚀 ระบบ Smart Cache
 @st.cache_resource(ttl=3600)
@@ -157,18 +169,33 @@ def get_google_sheets():
     sheet_cat = sh.add_worksheet(title="Categories", rows="100", cols="3")
     sheet_cat.append_row(["ประเภท", "หมวดหมู่หลัก", "หมวดหมู่ย่อย"])
 
+  # อัปเกรดชีต Loans ให้รองรับ Multi-Loan (9 คอลัมน์) โดยไม่กระทบข้อมูลเดิม
   try:
     sheet_loan = sh.worksheet("Loans")
+    if sheet_loan.col_count < len(LOAN_HEADERS):
+      sheet_loan.resize(
+          rows=max(sheet_loan.row_count, 30), cols=len(LOAN_HEADERS)
+      )
+    existing_loan_headers = sheet_loan.row_values(1)
+    if len(existing_loan_headers) < len(LOAN_HEADERS):
+      for col_i in range(len(existing_loan_headers) + 1, len(LOAN_HEADERS) + 1):
+        sheet_loan.update_cell(1, col_i, LOAN_HEADERS[col_i - 1])
   except:
-    sheet_loan = sh.add_worksheet(title="Loans", rows="10", cols="5")
+    sheet_loan = sh.add_worksheet(
+        title="Loans", rows="30", cols=str(len(LOAN_HEADERS))
+    )
+    sheet_loan.append_row(LOAN_HEADERS)
     sheet_loan.append_row([
-        "เงินต้น",
-        "อัตราดอกเบี้ยปี",
-        "ระยะเวลาเดือน",
-        "งวดที่จ่ายแล้ว",
-        "เดือนปีที่จ่ายล่าสุด",
+        10000.0,
+        15.0,
+        12,
+        0,
+        "",
+        "สัญญาเริ่มต้น #1",
+        "📦 คลังออมทั่วไป",
+        "🏦 กรุงไทย",
+        "🟢 กำลังผ่อน",
     ])
-    sheet_loan.append_row([10000.0, 15.0, 12, 0, ""])
 
   try:
     sheet_cycle = sh.worksheet("Cycles")
@@ -299,7 +326,7 @@ def fetch_categories():
 
 @st.cache_data(ttl=60)
 def fetch_loans():
-  return loan_sheet.get_all_records()
+  return loan_sheet.get_all_values()
 
 
 @st.cache_data(ttl=60)
@@ -354,7 +381,6 @@ def find_matching_advance_row(all_rows, created_str, debtor_name, amount_val):
   created_clean = str(created_str).strip()
   debtor_clean = str(debtor_name).strip()
 
-  # รอบที่ 1: จับคู่ตรงเป๊ะด้วยวันเวลา + ประเภท + จำนวนเงิน
   for i, row in enumerate(all_rows):
     if len(row) < 4:
       continue
@@ -368,7 +394,6 @@ def find_matching_advance_row(all_rows, created_str, debtor_name, amount_val):
       if r_date == created_clean and abs(r_amt - target_amt) < 0.01:
         return i + 1
 
-  # รอบที่ 2: เผื่อกรณีรูปแบบวันที่ถูก Google Sheets ปรับฟอร์แมต ให้จับคู่จากชื่อลูกหนี้ + จำนวนเงิน
   for i, row in enumerate(all_rows):
     if len(row) < 4:
       continue
@@ -379,10 +404,92 @@ def find_matching_advance_row(all_rows, created_str, debtor_name, amount_val):
     except (ValueError, TypeError):
       continue
     if "เงินทดจ่าย" in r_type and "รับคืน" not in r_type:
-      if debtor_clean and debtor_clean in r_cat and abs(r_amt - target_amt) < 0.01:
+      if (
+          debtor_clean
+          and debtor_clean in r_cat
+          and abs(r_amt - target_amt) < 0.01
+      ):
         return i + 1
 
   return None
+
+
+def calculate_emi_schedule(P, annual_r, n):
+  """คำนวณตารางผ่อนชำระ EMI รองรับทั้งกรณีมีดอกเบี้ยและดอกเบี้ย 0%"""
+  n = max(1, int(n))
+  r = (float(annual_r) / 100.0) / 12.0
+  if r == 0:
+    emi = float(P) / n
+  else:
+    emi = float(P) * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+
+  schedule = []
+  balance = float(P)
+  for month in range(1, n + 1):
+    interest_payment = balance * r
+    principal_payment = emi - interest_payment
+    balance = max(0.0, balance - principal_payment)
+    schedule.append({
+        "งวดที่": month,
+        "ยอดชำระ (EMI)": emi,
+        "ตัดเงินต้น": principal_payment,
+        "จ่ายดอกเบี้ย": interest_payment,
+        "เงินต้นคงเหลือ": balance,
+    })
+  return emi, pd.DataFrame(schedule)
+
+
+def load_loans_df(default_wallet="🏦 กรุงไทย"):
+  raw_rows = fetch_loans()
+  if not raw_rows or len(raw_rows) <= 1:
+    return pd.DataFrame(columns=LOAN_HEADERS + ["sheet_row"])
+
+  parsed = []
+  for idx, row in enumerate(raw_rows[1:], start=2):
+    if not any(str(cell).strip() for cell in row):
+      continue
+    padded = list(row) + [""] * (len(LOAN_HEADERS) - len(row))
+    padded = padded[: len(LOAN_HEADERS)]
+    try:
+      p_val = float(padded[0])
+    except (ValueError, TypeError):
+      continue
+    if p_val <= 0:
+      continue
+    try:
+      r_val = float(padded[1])
+    except (ValueError, TypeError):
+      r_val = 0.0
+    try:
+      m_val = max(1, int(float(padded[2])))
+    except (ValueError, TypeError):
+      m_val = 12
+    try:
+      paid_val = max(0, int(float(padded[3])))
+    except (ValueError, TypeError):
+      paid_val = 0
+
+    last_paid = str(padded[4]).strip()
+    title = str(padded[5]).strip() or f"สัญญา #{len(parsed) + 1}"
+    source_goal = str(padded[6]).strip() or "📦 คลังออมทั่วไป"
+    recv_wallet = str(padded[7]).strip() or default_wallet
+    status = str(padded[8]).strip()
+    if not status:
+      status = "✅ ปิดสัญญาแล้ว" if paid_val >= m_val else "🟢 กำลังผ่อน"
+
+    parsed.append({
+        "เงินต้น": p_val,
+        "อัตราดอกเบี้ยปี": r_val,
+        "ระยะเวลาเดือน": m_val,
+        "งวดที่จ่ายแล้ว": paid_val,
+        "เดือนปีที่จ่ายล่าสุด": last_paid,
+        "ชื่อสัญญา": title,
+        "แหล่งเงิน (Goal)": source_goal,
+        "กระเป๋าที่รับเงิน": recv_wallet,
+        "สถานะ": status,
+        "sheet_row": idx,
+    })
+  return pd.DataFrame(parsed)
 
 
 def load_data():
@@ -585,23 +692,6 @@ df_budgets = (
     else pd.DataFrame(columns=["หมวดหมู่เป้าหมาย", "งบประมาณ (บาท)"])
 )
 
-loan_records = fetch_loans()
-if loan_records:
-  loan_info = loan_records[0]
-  db_principal = float(loan_info["เงินต้น"])
-  db_rate = float(loan_info["อัตราดอกเบี้ยปี"])
-  db_months = int(loan_info["ระยะเวลาเดือน"])
-  current_month_paid = int(loan_info["งวดที่จ่ายแล้ว"])
-  db_last_paid_month = str(loan_info["เดือนปีที่จ่ายล่าสุด"]).strip()
-else:
-  db_principal, db_rate, db_months, current_month_paid, db_last_paid_month = (
-      10000.0,
-      15.0,
-      12,
-      0,
-      "",
-  )
-
 wallets_data = fetch_wallets()
 df_wallets = (
     pd.DataFrame(wallets_data)
@@ -615,6 +705,8 @@ wallet_list = [
 ]
 if not wallet_list:
   wallet_list = ["🏦 กรุงไทย", "📱 TrueMoney Wallet", "🌸 ออมสิน"]
+
+df_loans = load_loans_df(wallet_list[0] if wallet_list else "🏦 กรุงไทย")
 
 goals_data = fetch_goals()
 df_goals = (
@@ -645,7 +737,6 @@ PRIORITY_LEVELS = [
 def calculate_savings_metrics(df_source):
   if df_source.empty or "ประเภท" not in df_source.columns:
     return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-  # แก้บั๊ก: ยกเว้น โอนย้าย|transfer|ปรับยอด เพื่อไม่ให้นับซ้ำตอนโอนเข้า 🌸 ออมสิน
   dep_mask = (
       df_source["ประเภท"]
       .astype(str)
@@ -953,6 +1044,24 @@ def get_dynamic_goal_options(is_withdraw=False):
       else:
         options.append(f"{g_name} (เป้าหมาย: ฿{g_target:,.2f})")
   return options
+
+
+def update_goal_saved_delta(goal_name, delta_amount):
+  """ปรับยอดสะสมในชีต Goals (+ สำหรับคืนเงินต้น/ฝาก, - สำหรับกู้/เบิก)"""
+  if not goal_name or goal_name == "📦 คลังออมทั่วไป" or df_goals.empty:
+    return False
+  for g_idx, g_row in df_goals.iterrows():
+    if str(g_row["ชื่อเป้าหมาย"]).strip() == str(goal_name).strip():
+      curr_saved = (
+          float(g_row["สะสมแล้ว (บาท)"])
+          if pd.notnull(g_row["สะสมแล้ว (บาท)"])
+          else 0.0
+      )
+      new_saved = round(max(0.0, curr_saved + float(delta_amount)), 2)
+      goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
+      fetch_goals.clear()
+      return True
+  return False
 
 
 goal_options_list = ["📦 คลังออมทั่วไป (ไม่ระบุเป้าหมาย)"] + (
@@ -1479,21 +1588,8 @@ if app_mode == "📱 Mobile Mode":
           full_category = f"{main_cat}: {sub_cat_final}"
           popup_cat_display = full_category
 
-          if raw_goal_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
-            for g_idx, g_row in df_goals.iterrows():
-              if str(g_row["ชื่อเป้าหมาย"]) == raw_goal_name:
-                curr_saved = (
-                    float(g_row["สะสมแล้ว (บาท)"])
-                    if pd.notnull(g_row["สะสมแล้ว (บาท)"])
-                    else 0.0
-                )
-                if final_type == "เงินออม":
-                  new_saved = curr_saved + float(amount)
-                else:
-                  new_saved = max(0.0, curr_saved - float(amount))
-                goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
-                fetch_goals.clear()
-                break
+          delta_val = float(amount) if final_type == "เงินออม" else -float(amount)
+          update_goal_saved_delta(raw_goal_name, delta_val)
           sheet.append_row([
               combined_datetime.strftime("%Y-%m-%d %H:%M:%S"),
               final_type,
@@ -1521,21 +1617,12 @@ if app_mode == "📱 Mobile Mode":
                   f"{note} (แบ่ง {pct:.1f}%)" if note else f"แบ่ง {pct:.1f}%"
               )
 
-              if raw_g_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
-                for g_idx, g_row in df_goals.iterrows():
-                  if str(g_row["ชื่อเป้าหมาย"]) == raw_g_name:
-                    curr_saved = (
-                        float(g_row["สะสมแล้ว (บาท)"])
-                        if pd.notnull(g_row["สะสมแล้ว (บาท)"])
-                        else 0.0
-                    )
-                    if final_type == "เงินออม":
-                      new_saved = curr_saved + float(split_amt)
-                    else:
-                      new_saved = max(0.0, curr_saved - float(split_amt))
-                    goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
-                    fetch_goals.clear()
-                    break
+              delta_val = (
+                  float(split_amt)
+                  if final_type == "เงินออม"
+                  else -float(split_amt)
+              )
+              update_goal_saved_delta(raw_g_name, delta_val)
               sheet.append_row([
                   combined_datetime.strftime("%Y-%m-%d %H:%M:%S"),
                   final_type,
@@ -2012,21 +2099,10 @@ else:
               full_category = f"{main_cat_dt}: {sub_cat_final}"
               popup_cat_display = full_category
 
-              if raw_goal_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
-                for g_idx, g_row in df_goals.iterrows():
-                  if str(g_row["ชื่อเป้าหมาย"]) == raw_goal_name:
-                    curr_saved = (
-                        float(g_row["สะสมแล้ว (บาท)"])
-                        if pd.notnull(g_row["สะสมแล้ว (บาท)"])
-                        else 0.0
-                    )
-                    if final_type == "เงินออม":
-                      new_saved = curr_saved + float(amount)
-                    else:
-                      new_saved = max(0.0, curr_saved - float(amount))
-                    goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
-                    fetch_goals.clear()
-                    break
+              delta_val = (
+                  float(amount) if final_type == "เงินออม" else -float(amount)
+              )
+              update_goal_saved_delta(raw_goal_name, delta_val)
               sheet.append_row([
                   combined_datetime.strftime("%Y-%m-%d %H:%M:%S"),
                   final_type,
@@ -2055,21 +2131,12 @@ else:
                       f"{note} (แบ่ง {pct:.1f}%)" if note else f"แบ่ง {pct:.1f}%"
                   )
 
-                  if raw_g_name != "📦 คลังออมทั่วไป" and not df_goals.empty:
-                    for g_idx, g_row in df_goals.iterrows():
-                      if str(g_row["ชื่อเป้าหมาย"]) == raw_g_name:
-                        curr_saved = (
-                            float(g_row["สะสมแล้ว (บาท)"])
-                            if pd.notnull(g_row["สะสมแล้ว (บาท)"])
-                            else 0.0
-                        )
-                        if final_type == "เงินออม":
-                          new_saved = curr_saved + float(split_amt)
-                        else:
-                          new_saved = max(0.0, curr_saved - float(split_amt))
-                        goal_sheet.update_cell(int(g_idx) + 2, 4, new_saved)
-                        fetch_goals.clear()
-                        break
+                  delta_val = (
+                      float(split_amt)
+                      if final_type == "เงินออม"
+                      else -float(split_amt)
+                  )
+                  update_goal_saved_delta(raw_g_name, delta_val)
                   sheet.append_row([
                       combined_datetime.strftime("%Y-%m-%d %H:%M:%S"),
                       final_type,
@@ -3315,7 +3382,7 @@ else:
       st.info("ไม่มีข้อมูลรายจ่ายบันทึกไว้ในรอบเดือนนี้ครับ")
 
   # ==========================================
-  # 🤝 Tab 3: ลูกหนี้ & หารบิล (เพิ่มระบบยกเลิกไม่ต้องจ่าย / ตัดจบ)
+  # 🤝 Tab 3: ลูกหนี้ & หารบิล
   # ==========================================
   with tab3:
     st.markdown(
@@ -3437,7 +3504,6 @@ else:
             elif d_amt is None or d_amt <= 0:
               st.error("กรุณาระบุจำนวนเงินให้ถูกต้องครับ")
             else:
-              # แก้บั๊ก ID ซ้ำ: ใช้ max(ID) + 1 แทน len() + 1
               if not df_debt.empty and "ID" in df_debt.columns:
                 max_id_val = pd.to_numeric(
                     df_debt["ID"], errors="coerce"
@@ -4086,216 +4152,494 @@ else:
         st.rerun()
 
   # ==========================================
-  # 🏦 Tab 6: Loan Simulator
+  # 🏦 Tab 6: Multi-Loan Simulator (รองรับหลายสัญญา + ผูกยอด Goal อัตโนมัติ)
   # ==========================================
   with tab6:
     st.markdown(
         "<p class='quick-add-text' style='font-size: 22px;'>🏦"
-        " เครื่องจำลองสินเชื่อระบบคลาวด์ถาวร (EMI Lock)</p>",
+        " เครื่องจำลองสินเชื่อระบบคลาวด์ถาวร (Multi-Loan & Goal Sync)</p>",
         unsafe_allow_html=True,
     )
     st.caption(
-        "💡 ระบบผูกเข้ากับคลังเงินออมอัตโนมัติ ทุกการกู้หรือคืนเงินจะสะท้อนผลไปที่"
-        " Dashboard ทันที"
+        "💡 รองรับการกู้หลายสัญญาพร้อมกัน เลือกหักยอดจาก Goal ที่ต้องการ"
+        " (เช่น Emergency Fund เพื่อกันงบเที่ยวไว้) และทยอยคืนเงินต้นกลับเข้า Goal"
+        " เดิมอัตโนมัติทุกครั้งที่จ่ายค่างวด"
     )
 
-    with st.expander("🛠️ เปิดสัญญา / ปรับปรุงยอดเงินกู้ใหม่"):
-      with st.form("loan_setup_form"):
-        inp_principal = st.number_input(
-            "วงเงินกู้ที่ต้องการ (บาท)",
-            min_value=1000.0,
-            value=None,
-            placeholder=f"ปัจจุบัน: ฿{db_principal:,.0f}",
-            step=1000.0,
-        )
-        inp_rate = st.number_input(
-            "อัตราดอกเบี้ยต่อปี (%)",
-            min_value=0.1,
-            value=None,
-            placeholder=f"ปัจจุบัน: {db_rate}%",
-            step=0.1,
-        )
-        inp_months = st.number_input(
-            "ระยะเวลาสัญญาผ่อน (เดือน)",
-            min_value=1,
-            value=None,
-            placeholder=f"ปัจจุบัน: {db_months} เดือน",
-            step=1,
-        )
+    # --- สรุปภาพรวมทุกสัญญาที่กำลังผ่อน ---
+    active_loans_count = 0
+    total_monthly_emi = 0.0
+    total_rem_principal = 0.0
+    total_active_principal = 0.0
 
-        if st.form_submit_button("💾 อัปเดตสัญญาเงินกู้ลงคลาวด์"):
-          new_p = inp_principal if inp_principal is not None else db_principal
-          new_r = inp_rate if inp_rate is not None else db_rate
-          new_m = inp_months if inp_months is not None else db_months
+    if not df_loans.empty:
+      for _, l_row in df_loans.iterrows():
+        l_p = float(l_row["เงินต้น"])
+        l_r = float(l_row["อัตราดอกเบี้ยปี"])
+        l_m = int(l_row["ระยะเวลาเดือน"])
+        l_paid = int(l_row["งวดที่จ่ายแล้ว"])
+        l_emi, l_sched = calculate_emi_schedule(l_p, l_r, l_m)
 
-          loan_sheet.update_cell(2, 1, new_p)
-          loan_sheet.update_cell(2, 2, new_r)
-          loan_sheet.update_cell(2, 3, new_m)
-          loan_sheet.update_cell(2, 4, 0)
-          loan_sheet.update_cell(2, 5, "")
+        if l_paid < l_m:
+          active_loans_count += 1
+          total_monthly_emi += l_emi
+          total_active_principal += l_p
+          if l_paid == 0:
+            total_rem_principal += l_p
+          elif not l_sched.empty and l_paid <= len(l_sched):
+            total_rem_principal += float(
+                l_sched.iloc[l_paid - 1]["เงินต้นคงเหลือ"]
+            )
 
-          now_str = datetime.datetime.now(TZ_TH).strftime("%Y-%m-%d %H:%M:%S")
-          default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
-          sheet.append_row([
-              now_str,
-              "กู้เงินออม",
-              "บริหารเงินออม: กู้เงินออม",
-              new_p,
-              f"เปิดสัญญาเงินกู้ระบบจำลอง ฿{new_p:,.0f}",
-              default_wallet,
-          ])
-
-          fetch_loans.clear()
-          fetch_main_data.clear()
-          st.success("เปิดสัญญาเงินกู้ฉบับใหม่และบันทึกลงคลังเรียบร้อยครับ!")
-          st.rerun()
-
-    def calculate_emi_schedule(P, annual_r, n):
-      r = (annual_r / 100) / 12
-      if r == 0:
-        return P / n, pd.DataFrame()
-      emi = P * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
-      schedule = []
-      balance = P
-      for month in range(1, int(n) + 1):
-        interest_payment = balance * r
-        principal_payment = emi - interest_payment
-        balance -= principal_payment
-        schedule.append({
-            "งวดที่": month,
-            "ยอดชำระ (EMI)": emi,
-            "ตัดเงินต้น": principal_payment,
-            "จ่ายดอกเบี้ย": interest_payment,
-            "เงินต้นคงเหลือ": max(0, balance),
-        })
-      return emi, pd.DataFrame(schedule)
-
-    emi_amount, df_schedule = calculate_emi_schedule(
-        db_principal, db_rate, db_months
-    )
-    total_interest = (
-        df_schedule["จ่ายดอกเบี้ย"].sum() if not df_schedule.empty else 0
-    )
-    total_payment = db_principal + total_interest
-
-    st.markdown("---")
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.markdown(
-        "<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน"
-        " (EMI)</div><div class='metric-value'"
-        f" style='color:#f9744b;'>฿{emi_amount:,.2f}</div></div>",
+    ov1, ov2, ov3, ov4 = st.columns(4)
+    ov1.markdown(
+        "<div class='metric-card'><div class='metric-title'>📄"
+        " สัญญาที่กำลังผ่อน</div><div class='metric-value'"
+        f" style='color:#457b9d;'>{active_loans_count} สัญญา</div></div>",
         unsafe_allow_html=True,
     )
-    m2.markdown(
-        "<div class='metric-card'><div"
-        " class='metric-title'>เงินต้นคงค้างระบบ</div><div"
-        f" class='metric-value'>฿{db_principal:,.0f}</div></div>",
+    ov2.markdown(
+        "<div class='metric-card'><div class='metric-title'>💸"
+        " ยอดผ่อนรวมต่อเดือน</div><div class='metric-value'"
+        f" style='color:#f9744b;'>฿{total_monthly_emi:,.2f}</div></div>",
         unsafe_allow_html=True,
     )
-    m3.markdown(
-        "<div class='metric-card'><div"
-        " class='metric-title'>ดอกเบี้ยทั้งสัญญา</div><div class='metric-value'"
-        f" style='color:#e9c46a;'>฿{total_interest:,.2f}</div></div>",
+    ov3.markdown(
+        "<div class='metric-card'><div class='metric-title'>⚖️"
+        " เงินต้นคงเหลือรวม</div><div class='metric-value'"
+        f" style='color:#e9c46a;'>฿{total_rem_principal:,.2f}</div></div>",
         unsafe_allow_html=True,
     )
-    m4.markdown(
-        "<div class='metric-card'><div"
-        " class='metric-title'>รวมชำระตลอดสัญญา</div><div class='metric-value'"
-        f" style='color:#f9744b;'>฿{total_payment:,.2f}</div></div>",
+    ov4.markdown(
+        "<div class='metric-card'><div class='metric-title'>🏦"
+        " คลังออมคงเหลือจริง</div><div class='metric-value'"
+        f" style='color:#2a9d8f;'>฿{total_sav_now:,.2f}</div></div>",
         unsafe_allow_html=True,
     )
 
-    st.markdown(
-        "<p class='quick-add-text'>🔄 ชำระค่างวดประจำเดือน</p>",
-        unsafe_allow_html=True,
-    )
-
-    current_real_month = datetime.datetime.now(TZ_TH).strftime("%Y-%m")
-    is_paid_this_month = db_last_paid_month == current_real_month
-
-    col_pay, col_info_lock = st.columns([1.5, 3.5])
-
-    with col_pay:
-      if current_month_paid >= db_months:
-        st.button(
-            "🎉 ผ่อนชำระครบสัญญาแล้ว", disabled=True, use_container_width=True
-        )
-      elif is_paid_this_month:
-        st.button(
-            "🔒 ล็อก! จ่ายงวดของเดือนนี้แล้ว",
-            disabled=True,
-            use_container_width=True,
-        )
-      else:
-        if st.button("💸 เช็คบิลจ่ายงวดประจำเดือนนี้", use_container_width=True):
-          next_paid_count = current_month_paid + 1
-          loan_sheet.update_cell(2, 4, next_paid_count)
-          loan_sheet.update_cell(2, 5, current_real_month)
-
-          now_str = datetime.datetime.now(TZ_TH).strftime("%Y-%m-%d %H:%M:%S")
-          default_wallet = wallet_list[0] if wallet_list else "🏦 กรุงไทย"
-          sheet.append_row([
-              now_str,
-              "คืนเงินกู้ออม",
-              "บริหารเงินออม: คืนเงินกู้ออม",
-              emi_amount,
-              f"ชำระค่างวดสินเชื่อจำลอง งวดที่ {next_paid_count}/{db_months}",
-              default_wallet,
-          ])
-
-          fetch_loans.clear()
-          fetch_main_data.clear()
-          st.toast(
-              f"ชำระงวดที่ {next_paid_count} สำเร็จ!"
-              " ระบบสแกนหักยอดและคืนคลังเรียบร้อย ✨"
+    # --- ฟอร์มเปิดสัญญาเงินกู้ใหม่ (เพิ่มแถวใหม่ ไม่ทับสัญญาเดิม) ---
+    with st.expander("➕ เปิดสัญญาเงินกู้ก้อนใหม่ (Add New Loan Contract)"):
+      loan_goal_options = get_dynamic_goal_options(is_withdraw=True)
+      with st.form("loan_add_new_form", clear_on_submit=True):
+        lc1, lc2 = st.columns(2)
+        with lc1:
+          inp_title = st.text_input(
+              "ชื่อสัญญาเงินกู้",
+              placeholder="เช่น หมุนค่าใช้จ่ายเดือนนี้, ซื้ออุปกรณ์...",
           )
-          st.rerun()
+          inp_principal = st.number_input(
+              "วงเงินกู้ที่ต้องการ (บาท)",
+              min_value=100.0,
+              value=None,
+              placeholder="0.00",
+              step=500.0,
+          )
+          inp_source_goal = st.selectbox(
+              "🎯 แหล่งเงินออมที่จะยืม (หักจาก Goal นี้):",
+              loan_goal_options,
+          )
+        with lc2:
+          inp_rate = st.number_input(
+              "อัตราดอกเบี้ยต่อปี (% — ใส่ 0 หากไม่คิดดอกเบี้ย)",
+              min_value=0.0,
+              value=0.0,
+              step=0.5,
+          )
+          inp_months = st.number_input(
+              "ระยะเวลาสัญญาผ่อน (เดือน)",
+              min_value=1,
+              value=6,
+              step=1,
+          )
+          inp_target_wallet = st.selectbox(
+              "💳 โอนเงินที่กู้เข้ากระเป๋าไหน?",
+              wallet_list,
+          )
 
-    with col_info_lock:
-      if is_paid_this_month and current_month_paid < db_months:
-        st.info(
-            f"ระบบตรวจพบสถานะความปลอดภัย: งวดที่ {current_month_paid}"
-            f" ถูกตัดบัญชีไปเมื่อเดือน {db_last_paid_month} เรียบร้อยแล้ว"
-            " ปุ่มชำระเงินจะเปิดให้กดใหม่อัตโนมัติเมื่อขึ้นเดือนถัดไปครับ"
-        )
-      elif current_month_paid >= db_months:
-        st.success("สัญญาเงินกู้ฉบับนี้เสร็จสิ้นอย่างสมบูรณ์แบบเรียบร้อยแล้ว!")
+        if st.form_submit_button(
+            "💾 เปิดสัญญาเงินกู้ใหม่ & หักยอดจาก Goal ทันที",
+            use_container_width=True,
+        ):
+          if inp_principal is None or inp_principal <= 0:
+            st.error("กรุณาระบุวงเงินกู้ที่ต้องการครับ")
+          else:
+            raw_goal_name = inp_source_goal.split(" (")[0]
+            avail_in_goal = get_goal_limit(
+                inp_source_goal, df_goals, is_withdraw=True
+            )
 
-    progress_pct = current_month_paid / db_months if db_months > 0 else 0
-    st.progress(progress_pct)
-    st.caption(
-        f"ชำระไปแล้ว {current_month_paid} งวด จากทั้งหมด {db_months} งวด"
-        f" ({progress_pct*100:.1f}%)"
-    )
+            # ป้องกันการกู้เกินยอดที่มีใน Goal ที่เลือก เพื่อไม่ให้กระทบ Goal อื่น
+            if (
+                raw_goal_name != "📦 คลังออมทั่วไป"
+                and float(inp_principal) > avail_in_goal + 0.01
+            ):
+              st.error(
+                  f"❌ ยอดเงินใน '{raw_goal_name}' มีอยู่"
+                  f" ฿{avail_in_goal:,.2f} ไม่พอสำหรับกู้"
+                  f" ฿{float(inp_principal):,.2f} กรุณาลดวงเงินหรือเลือก"
+                  " '📦 คลังออมทั่วไป' ครับ"
+              )
+            elif float(inp_principal) > total_sav_now + 0.01:
+              st.error(
+                  f"❌ ยอดเงินสดในคลังออมรวมมีอยู่ ฿{total_sav_now:,.2f}"
+                  " ไม่พอสำหรับเปิดสัญญานี้ครับ"
+              )
+            else:
+              final_title = (
+                  inp_title.strip()
+                  if inp_title.strip()
+                  else f"สัญญาเงินกู้ #{len(df_loans) + 1}"
+              )
+              now_str = datetime.datetime.now(TZ_TH).strftime(
+                  "%Y-%m-%d %H:%M:%S"
+              )
+
+              # 1. เพิ่มสัญญาใหม่ต่อท้ายในชีต Loans
+              loan_sheet.append_row([
+                  float(inp_principal),
+                  float(inp_rate),
+                  int(inp_months),
+                  0,
+                  "",
+                  final_title,
+                  raw_goal_name,
+                  inp_target_wallet,
+                  "🟢 กำลังผ่อน",
+              ])
+
+              # 2. หักยอดสะสมออกจาก Goal ที่เลือก (ถ้าไม่ใช่คลังทั่วไป)
+              update_goal_saved_delta(raw_goal_name, -float(inp_principal))
+
+              # 3. บันทึกรายการกู้เงินออมลงชีตหลัก (หักออมสิน -> เข้ากระเป๋าที่เลือก)
+              loan_cat = (
+                  f"บริหารเงินออม: กู้เงินออม [{raw_goal_name}]"
+                  if raw_goal_name != "📦 คลังออมทั่วไป"
+                  else "บริหารเงินออม: กู้เงินออม"
+              )
+              sheet.append_row([
+                  now_str,
+                  "กู้เงินออม",
+                  loan_cat,
+                  float(inp_principal),
+                  f"เปิดสัญญาเงินกู้: {final_title}",
+                  inp_target_wallet,
+              ])
+
+              fetch_loans.clear()
+              fetch_main_data.clear()
+              st.success(
+                  f"🎉 เปิดสัญญา '{final_title}' วงเงิน"
+                  f" ฿{float(inp_principal):,.2f} (หักจาก {raw_goal_name})"
+                  " เรียบร้อยแล้ว!"
+              )
+              st.rerun()
 
     st.markdown("---")
-    st.markdown(
-        "<p class='quick-add-text'>📋 ตารางแจกแจงการผ่อนชำระคลาวด์"
-        " (Amortization Schedule)</p>",
-        unsafe_allow_html=True,
-    )
 
-    if not df_schedule.empty:
-      df_display = df_schedule.copy()
-      for col in [
-          "ยอดชำระ (EMI)",
-          "ตัดเงินต้น",
-          "จ่ายดอกเบี้ย",
-          "เงินต้นคงเหลือ",
-      ]:
-        df_display[col] = df_display[col].apply(lambda x: f"฿ {x:,.2f}")
+    # --- เลือกดูและจัดการรายสัญญา ---
+    if df_loans.empty:
+      st.info("ยังไม่มีสัญญาเงินกู้ในระบบ กดปุ่มด้านบนเพื่อเปิดสัญญาแรกได้เลยครับ")
+    else:
+      loan_select_labels = []
+      for idx, r in df_loans.iterrows():
+        l_paid_i = int(r["งวดที่จ่ายแล้ว"])
+        l_m_i = int(r["ระยะเวลาเดือน"])
+        badge_i = "✅" if l_paid_i >= l_m_i else "🟢"
+        loan_select_labels.append(
+            f"{badge_i} {r['ชื่อสัญญา']} | ฿{float(r['เงินต้น']):,.0f}"
+            f" ({l_paid_i}/{l_m_i} งวด) • ยืมจาก: {r['แหล่งเงิน (Goal)']}"
+        )
 
-      def highlight_paid(row):
-        if row.name < current_month_paid:
-          return [
-              "background-color: rgba(42, 157, 143, 0.1); color: #2a9d8f;"
-              " font-weight: bold"
-          ] * len(row)
-        return [""] * len(row)
+      # ตั้งค่าเริ่มต้นให้เลือกสัญญาที่กำลังผ่อนอันแรก
+      default_loan_idx = 0
+      for idx, r in df_loans.iterrows():
+        if int(r["งวดที่จ่ายแล้ว"]) < int(r["ระยะเวลาเดือน"]):
+          default_loan_idx = idx
+          break
 
-      st.dataframe(
-          df_display.style.apply(highlight_paid, axis=1),
-          use_container_width=True,
-          hide_index=True,
+      chosen_loan_label = st.selectbox(
+          "📑 เลือกสัญญาที่ต้องการดูรายละเอียด / ชำระค่างวด:",
+          loan_select_labels,
+          index=default_loan_idx,
+          key="multi_loan_selector",
       )
+      sel_idx = loan_select_labels.index(chosen_loan_label)
+      sel_loan = df_loans.iloc[sel_idx]
+
+      db_principal = float(sel_loan["เงินต้น"])
+      db_rate = float(sel_loan["อัตราดอกเบี้ยปี"])
+      db_months = int(sel_loan["ระยะเวลาเดือน"])
+      current_month_paid = int(sel_loan["งวดที่จ่ายแล้ว"])
+      db_last_paid_month = str(sel_loan["เดือนปีที่จ่ายล่าสุด"]).strip()
+      loan_title = str(sel_loan["ชื่อสัญญา"]).strip()
+      loan_source_goal = str(sel_loan["แหล่งเงิน (Goal)"]).strip()
+      loan_recv_wallet = str(sel_loan["กระเป๋าที่รับเงิน"]).strip()
+      loan_sheet_row = int(sel_loan["sheet_row"])
+
+      emi_amount, df_schedule = calculate_emi_schedule(
+          db_principal, db_rate, db_months
+      )
+      total_interest = (
+          float(df_schedule["จ่ายดอกเบี้ย"].sum())
+          if not df_schedule.empty
+          else 0.0
+      )
+      total_payment = db_principal + total_interest
+      rem_principal_this = (
+          db_principal
+          if current_month_paid == 0
+          else (
+              0.0
+              if current_month_paid >= db_months
+              else float(
+                  df_schedule.iloc[current_month_paid - 1]["เงินต้นคงเหลือ"]
+              )
+          )
+      )
+
+      st.markdown(
+          f"<div style='background-color: rgba(69, 123, 157, 0.1);"
+          f" border-left: 4px solid #457b9d; padding: 10px 16px;"
+          f" border-radius: 8px; margin-bottom: 14px;'>"
+          f"<b>📌 สัญญา:</b> {loan_title} &nbsp;|&nbsp; <b>🎯 แหล่งเงินที่ยืม:</b>"
+          f" {loan_source_goal} &nbsp;|&nbsp; <b>ดอกเบี้ย:</b> {db_rate:.2f}%/ปี"
+          f"</div>",
+          unsafe_allow_html=True,
+      )
+
+      m1, m2, m3, m4 = st.columns(4)
+      m1.markdown(
+          "<div class='metric-card'><div class='metric-title'>ยอดผ่อนต่อเดือน"
+          f" (EMI)</div><div class='metric-value'"
+          f" style='color:#f9744b;'>฿{emi_amount:,.2f}</div></div>",
+          unsafe_allow_html=True,
+      )
+      m2.markdown(
+          "<div class='metric-card'><div"
+          " class='metric-title'>เงินต้นคงเหลือสัญญานี้</div><div"
+          f" class='metric-value'>฿{rem_principal_this:,.2f}</div></div>",
+          unsafe_allow_html=True,
+      )
+      m3.markdown(
+          "<div class='metric-card'><div"
+          " class='metric-title'>ดอกเบี้ยทั้งสัญญา</div><div class='metric-value'"
+          f" style='color:#e9c46a;'>฿{total_interest:,.2f}</div></div>",
+          unsafe_allow_html=True,
+      )
+      m4.markdown(
+          "<div class='metric-card'><div"
+          " class='metric-title'>รวมชำระตลอดสัญญา</div><div class='metric-value'"
+          f" style='color:#f9744b;'>฿{total_payment:,.2f}</div></div>",
+          unsafe_allow_html=True,
+      )
+
+      st.markdown(
+          "<p class='quick-add-text'>🔄 ชำระค่างวดประจำเดือน</p>",
+          unsafe_allow_html=True,
+      )
+
+      current_real_month = datetime.datetime.now(TZ_TH).strftime("%Y-%m")
+      is_paid_this_month = db_last_paid_month == current_real_month
+
+      # ดึงยอดเงินต้นและดอกเบี้ยของงวดถัดไปที่จะจ่าย
+      next_paid_count = current_month_paid + 1
+      next_principal = 0.0
+      next_interest = 0.0
+      if current_month_paid < db_months and not df_schedule.empty:
+        next_row = df_schedule.iloc[current_month_paid]
+        next_principal = float(next_row["ตัดเงินต้น"])
+        next_interest = float(next_row["จ่ายดอกเบี้ย"])
+
+      col_pay_opt1, col_pay_opt2 = st.columns([1.2, 1.8])
+      with col_pay_opt1:
+        default_pay_w_idx = (
+            wallet_list.index(loan_recv_wallet)
+            if loan_recv_wallet in wallet_list
+            else 0
+        )
+        pay_wallet = st.selectbox(
+            "💳 หักเงินชำระจากกระเป๋า:",
+            wallet_list,
+            index=default_pay_w_idx,
+            key=f"loan_pay_wallet_{loan_sheet_row}",
+        )
+      with col_pay_opt2:
+        add_interest_to_goal = st.checkbox(
+            f"🎁 ทบดอกเบี้ย (฿{next_interest:,.2f}) เข้า '{loan_source_goal}'"
+            " ด้วย (ถ้าไม่ติ๊ก จะคืนเฉพาะเงินต้น ส่วนดอกเบี้ยเข้าคลังออมทั่วไป)",
+            value=False,
+            key=f"loan_int_goal_{loan_sheet_row}",
+        )
+        allow_early_pay = st.checkbox(
+            "🔓 ปลดล็อกจ่ายล่วงหน้า (โปะงวดถัดไปในเดือนเดียวกัน)",
+            value=False,
+            key=f"loan_early_{loan_sheet_row}",
+        )
+
+      col_pay, col_info_lock = st.columns([1.6, 3.4])
+
+      with col_pay:
+        if current_month_paid >= db_months:
+          st.button(
+              "🎉 ผ่อนชำระครบสัญญาแล้ว",
+              disabled=True,
+              use_container_width=True,
+              key=f"btn_done_{loan_sheet_row}",
+          )
+        elif is_paid_this_month and not allow_early_pay:
+          st.button(
+              "🔒 ล็อก! จ่ายงวดของเดือนนี้แล้ว",
+              disabled=True,
+              use_container_width=True,
+              key=f"btn_lock_{loan_sheet_row}",
+          )
+        else:
+          if st.button(
+              f"💸 จ่ายงวดที่ {next_paid_count}/{db_months}"
+              f" (฿{emi_amount:,.2f})",
+              use_container_width=True,
+              key=f"btn_pay_{loan_sheet_row}",
+          ):
+            # 1. อัปเดตสถานะงวดในชีต Loans ตามแถวของสัญญานี้
+            loan_sheet.update_cell(loan_sheet_row, 4, next_paid_count)
+            loan_sheet.update_cell(loan_sheet_row, 5, current_real_month)
+            if next_paid_count >= db_months:
+              loan_sheet.update_cell(loan_sheet_row, 9, "✅ ปิดสัญญาแล้ว")
+
+            # 2. คืนเงินต้น (หรือเงินต้น+ดอกเบี้ย) กลับเข้า Goal ต้นทาง
+            goal_return_amt = (
+                emi_amount if add_interest_to_goal else next_principal
+            )
+            update_goal_saved_delta(loan_source_goal, goal_return_amt)
+
+            # 3. บันทึกรายการคืนเงินกู้ออมลงชีตหลัก
+            now_str = datetime.datetime.now(TZ_TH).strftime("%Y-%m-%d %H:%M:%S")
+            repay_cat = (
+                f"บริหารเงินออม: คืนเงินกู้ออม [{loan_source_goal}]"
+                if loan_source_goal != "📦 คลังออมทั่วไป"
+                else "บริหารเงินออม: คืนเงินกู้ออม"
+            )
+            sheet.append_row([
+                now_str,
+                "คืนเงินกู้ออม",
+                repay_cat,
+                round(emi_amount, 2),
+                (
+                    f"ชำระค่างวด [{loan_title}] งวดที่"
+                    f" {next_paid_count}/{db_months} (ต้น"
+                    f" ฿{next_principal:,.2f} + ดอก ฿{next_interest:,.2f})"
+                ),
+                pay_wallet,
+            ])
+
+            fetch_loans.clear()
+            fetch_main_data.clear()
+            st.toast(
+                f"ชำระงวดที่ {next_paid_count} สำเร็จ! คืนเงิน"
+                f" ฿{goal_return_amt:,.2f} กลับเข้า '{loan_source_goal}'"
+                " เรียบร้อย ✨"
+            )
+            st.rerun()
+
+      with col_info_lock:
+        if current_month_paid >= db_months:
+          st.success(
+              f"สัญญา '{loan_title}' ผ่อนชำระครบและคืนเงินต้นเข้า"
+              f" '{loan_source_goal}' ครบถ้วนแล้ว!"
+          )
+        elif is_paid_this_month and not allow_early_pay:
+          st.info(
+              f"งวดที่ {current_month_paid} ของสัญญานี้ถูกชำระไปแล้วเมื่อเดือน"
+              f" {db_last_paid_month} (ติ๊ก 'ปลดล็อกจ่ายล่วงหน้า'"
+              " ด้านบนหากต้องการโปะเพิ่ม)"
+          )
+        else:
+          st.info(
+              f"งวดถัดไป (#{next_paid_count}): ตัดเงินต้นคืนเข้า"
+              f" '{loan_source_goal}' จำนวน **฿{next_principal:,.2f}** +"
+              f" ดอกเบี้ย **฿{next_interest:,.2f}**"
+          )
+
+      progress_pct = current_month_paid / db_months if db_months > 0 else 0
+      st.progress(min(progress_pct, 1.0))
+      st.caption(
+          f"ชำระไปแล้ว {current_month_paid} งวด จากทั้งหมด {db_months} งวด"
+          f" ({progress_pct*100:.1f}%)"
+      )
+
+      st.markdown("---")
+      st.markdown(
+          f"<p class='quick-add-text'>📋 ตารางแจกแจงการผ่อนชำระ ({loan_title})</p>",
+          unsafe_allow_html=True,
+      )
+
+      if not df_schedule.empty:
+        df_display = df_schedule.copy()
+        for col in [
+            "ยอดชำระ (EMI)",
+            "ตัดเงินต้น",
+            "จ่ายดอกเบี้ย",
+            "เงินต้นคงเหลือ",
+        ]:
+          df_display[col] = df_display[col].apply(lambda x: f"฿ {x:,.2f}")
+
+        def highlight_paid(row):
+          if row.name < current_month_paid:
+            return [
+                "background-color: rgba(42, 157, 143, 0.1); color: #2a9d8f;"
+                " font-weight: bold"
+            ] * len(row)
+          return [""] * len(row)
+
+        st.dataframe(
+            df_display.style.apply(highlight_paid, axis=1),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+      # --- ตารางจัดการสัญญาทั้งหมด (แก้ไข/ลบ) ---
+      with st.expander("🛠️ จัดการสัญญาเงินกู้ทั้งหมด (แก้ไข / ลบสัญญา)"):
+        st.caption(
+            "💡 สามารถแก้ชื่อสัญญา เปลี่ยนแหล่งเงิน (Goal) ที่ผูกไว้"
+            " หรือเลือกแถวแล้วกด Delete เพื่อลบสัญญาออกได้ครับ"
+        )
+        loan_edit_df = df_loans[LOAN_HEADERS].copy()
+        goal_choices_clean = ["📦 คลังออมทั่วไป"] + (
+            df_goals["ชื่อเป้าหมาย"].tolist() if not df_goals.empty else []
+        )
+        edited_loans = st.data_editor(
+            loan_edit_df,
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={
+                "เงินต้น": st.column_config.NumberColumn(
+                    "เงินต้น (บาท)", format="฿ %.2f"
+                ),
+                "อัตราดอกเบี้ยปี": st.column_config.NumberColumn(
+                    "ดอกเบี้ย (%/ปี)", format="%.2f"
+                ),
+                "แหล่งเงิน (Goal)": st.column_config.SelectboxColumn(
+                    "แหล่งเงิน (Goal)", options=goal_choices_clean
+                ),
+                "กระเป๋าที่รับเงิน": st.column_config.SelectboxColumn(
+                    "กระเป๋าที่รับเงิน", options=wallet_list
+                ),
+                "สถานะ": st.column_config.SelectboxColumn(
+                    "สถานะ", options=["🟢 กำลังผ่อน", "✅ ปิดสัญญาแล้ว"]
+                ),
+            },
+            key="editor_loans_multi_v1",
+        )
+        if st.button(
+            "💾 บันทึกการเปลี่ยนแปลงรายการสัญญาเงินกู้",
+            use_container_width=True,
+        ):
+          clean_loans = edited_loans.fillna("")
+          loan_sheet.clear()
+          loan_sheet.update(
+              range_name="A1",
+              values=[LOAN_HEADERS] + clean_loans.values.tolist(),
+          )
+          fetch_loans.clear()
+          st.success("อัปเดตรายการสัญญาเงินกู้เรียบร้อย! ✨")
+          st.rerun()
